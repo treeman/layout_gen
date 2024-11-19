@@ -4,6 +4,7 @@ use camino::Utf8Path;
 use eyre::Result;
 use regex::Regex;
 use serde::Deserialize;
+use std::cmp;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
@@ -29,34 +30,51 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
     // - Need to have a way to deal with keys that activate the current layer
     // - Customize font size?
 
-    file.write_all(
-        r#"<svg width='800px'
-       height='320px'
-       viewBox='0 0 800 320'
+    let keyboard_border = 10.0;
+    let border_w = 6.0;
+    let border_top = 4.0;
+
+    let inner_w = 42.0;
+    let outer_w = inner_w + border_w * 2.0;
+
+    let mut max_x: f32 = 0.0;
+    let mut max_y: f32 = 0.0;
+    for key in layer.keys.iter() {
+        max_x = max_x.max((1.0 + key.x) * outer_w);
+        max_y = max_y.max((1.0 + key.y) * outer_w);
+    }
+    max_x += keyboard_border * 2.0;
+    max_y += keyboard_border * 2.0;
+
+    writeln!(
+        file,
+        r#"<svg width='{max_x}px'
+       height='{max_y}x'
+       viewBox='0 0 {max_x} {max_y}'
        xmlns='http://www.w3.org/2000/svg'
        xmlns:xlink="http://www.w3.org/1999/xlink">
 "#
-        .as_bytes(),
     )?;
 
+    // TODO add class specifying keyboard/keymap name
+
+    // for x in self.content.posts.values() {
+    //     if x.embedded_files.contains(&path.rel_path) {
+    //         self.rebuild_post(x.path.clone())?;
+    //     }
+    // }
     file.write_all(
         r#" <style type='text/css'>
     .keycap .border { stroke: black; stroke-width: 1; }
     .keycap .inner.border { stroke: rgba(0,0,0,.1); }
     .keycap { font-family: sans-serif; font-size: 11px}
+    .keycap .sub { font-size: 9px}
   </style>
 "#
         .as_bytes(),
     )?;
 
     for key in layer.keys.iter() {
-        let keyboard_border = 10.0;
-        let border_w = 6.0;
-        let border_top = 4.0;
-
-        let inner_w = 40.0;
-        let outer_w = inner_w + border_w * 2.0;
-
         let outer_x = keyboard_border + key.x * outer_w;
         let outer_y = keyboard_border + key.y * outer_w;
 
@@ -84,7 +102,6 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
         let text = key_opts.title.lines().collect::<Vec<_>>();
 
         if !text.is_empty() {
-            // let total_h = text.len() as f32 * text_h;
             let y_offset = (text.len() - 1) as f32 * text_h / 2.0;
 
             let text_x = inner_x + inner_w / 2.0;
@@ -92,7 +109,7 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
 
             writeln!(
                 file,
-                r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle">"#
+                r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle" class="main">"#
             )?;
 
             for (i, txt) in text.into_iter().enumerate() {
@@ -105,6 +122,18 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
             }
 
             writeln!(file, "</text>")?;
+        }
+
+        if let Some(subtxt) = key_opts.hold_title {
+            // let y_offset = 0.0;
+
+            let text_x = inner_x + inner_w / 2.0;
+            let text_y = inner_y + inner_w + 6.2;
+
+            writeln!(
+                file,
+                r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" class="sub">{subtxt}</text>"#
+            )?;
         }
         writeln!(file, "</g>")?;
     }
