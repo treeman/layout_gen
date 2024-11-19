@@ -4,12 +4,17 @@ use camino::Utf8Path;
 use eyre::Result;
 use regex::Regex;
 use serde::Deserialize;
-use std::cmp;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::sync::LazyLock;
+
+// TODO
+// - Generate legend
+// - Generate combos
+// - Set default colors for different types
+// - Add wrapping class specifying keyboard/keymap name
 
 pub fn render(keymap: &Keymap, render_opts: &Utf8Path, output_dir: &Utf8Path) -> Result<()> {
     let render_opts = RenderOpts::parse(render_opts)?;
@@ -17,6 +22,87 @@ pub fn render(keymap: &Keymap, render_opts: &Utf8Path, output_dir: &Utf8Path) ->
     for layer in keymap.layers.iter() {
         render_layer(layer, &render_opts, output_dir)?;
     }
+
+    render_legend(&render_opts.legend, output_dir)?;
+
+    Ok(())
+}
+
+fn render_legend(legend: &[LegendSpec], output_dir: &Utf8Path) -> Result<()> {
+    let path = output_dir.join("legend.svg");
+    let mut file = File::create(path)?;
+
+    let border = 10.0;
+    let border_w = 6.0;
+    let border_top = 4.0;
+    let border_bottom = border_w * 2.0 - border_top;
+
+    let inner_h = 42.0;
+    let outer_h = inner_h + border_w * 2.0;
+
+    let inner_w = 4.0 * 42.0;
+    let outer_w = inner_w + border_w * 2.0;
+
+    let item_count = legend.len();
+    let columns = std::cmp::min(item_count, 4);
+    let rows = item_count / columns;
+
+    let max_x = columns as f32 * outer_w + border * 2.0;
+    let max_y = rows as f32 * outer_h + border * 2.0;
+
+    writeln!(
+        file,
+        r#"<svg width='{max_x}px'
+    height='{max_y}x'
+    viewBox='0 0 {max_x} {max_y}'
+    xmlns='http://www.w3.org/2000/svg'
+    xmlns:xlink="http://www.w3.org/1999/xlink">
+"#
+    )?;
+
+    file.write_all(
+        r#" <style type='text/css'>
+    .legend .border { stroke: black; stroke-width: 1; }
+    .legend .inner.border { stroke: rgba(0,0,0,.1); }
+    .legend { font-family: sans-serif; font-size: 11px}
+  </style>
+"#
+        .as_bytes(),
+    )?;
+
+    for (i, item) in legend.iter().enumerate() {
+        let row = i / columns;
+        let col = i - row * columns;
+
+        let class = &item.class;
+        let txt = html_escape::encode_safe(&item.title);
+
+        let outer_x = border + col as f32 * outer_w;
+        let outer_y = border + row as f32 * outer_h;
+
+        let inner_x = border + col as f32 * outer_w + border_w;
+        let inner_y = border + row as f32 * outer_h + border_top;
+
+        let text_x = inner_x + inner_w / 2.0;
+        let text_y = inner_y + inner_h / 2.0;
+
+        writeln!(
+            file,
+            r##"<g class="legend {class}">
+
+      <rect x="{outer_x}" y="{outer_y}"
+            width="{outer_w}" height="{outer_h}"
+            rx="5" fill="#e5c494" class="outer border"/>
+      <rect x="{inner_x}" y="{inner_y}"
+            width="{inner_w}" height="{inner_h}"
+            rx="5" fill="#fff3c1" class="inner border"/>
+    <text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle">{txt}</text>
+    </g>
+"##,
+        )?;
+    }
+
+    file.write_all("</svg>".as_bytes())?;
 
     Ok(())
 }
@@ -56,13 +142,6 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
 "#
     )?;
 
-    // TODO add class specifying keyboard/keymap name
-
-    // for x in self.content.posts.values() {
-    //     if x.embedded_files.contains(&path.rel_path) {
-    //         self.rebuild_post(x.path.clone())?;
-    //     }
-    // }
     file.write_all(
         r#" <style type='text/css'>
     .keycap .border { stroke: black; stroke-width: 1; }
@@ -147,6 +226,7 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
 struct RenderOpts {
     default_keys: HashMap<String, PartialKeyOpts>,
     layer_keys: HashMap<String, HashMap<String, PartialKeyOpts>>,
+    legend: Vec<LegendSpec>,
 }
 
 impl RenderOpts {
@@ -164,7 +244,7 @@ impl RenderOpts {
         let mut default_keys = HashMap::new();
         let mut layer_keys: HashMap<String, HashMap<String, PartialKeyOpts>> = HashMap::new();
 
-        for (layer_id, layer) in spec {
+        for (layer_id, layer) in spec.layers {
             for key_spec in &layer {
                 for key in &key_spec.keys {
                     let opts = PartialKeyOpts::from_spec(key, key_spec);
@@ -183,6 +263,7 @@ impl RenderOpts {
         Self {
             default_keys,
             layer_keys,
+            legend: spec.legend,
         }
     }
 
@@ -308,7 +389,13 @@ impl PartialKeyOpts {
     }
 }
 
-type RenderSpec = HashMap<String, LayerSpec>;
+#[derive(Deserialize, Debug)]
+struct RenderSpec {
+    layers: LayersSpec,
+    legend: Vec<LegendSpec>,
+}
+
+type LayersSpec = HashMap<String, LayerSpec>;
 type LayerSpec = Vec<KeySpec>;
 
 #[derive(Deserialize, Debug)]
@@ -317,6 +404,12 @@ struct KeySpec {
     title: Option<String>,
     hold_title: Option<String>,
     class: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct LegendSpec {
+    class: String,
+    title: String,
 }
 
 #[cfg(test)]
