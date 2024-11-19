@@ -381,5 +381,20 @@
         "class": "management"
       }
     ]
+  },
+  "colors": {
+    "blank": "#e9e1db",
+    "default": "#c1a78e",
+    "management": "#a98a78",
+    "mod1": "#6e9b72",
+    "mod_down": "#85b695",
+    "mod_implicit": "#739797",
+    "layer1": "#7892bd",
+    "layer_down": "#a3a9ce",
+    "layer_toggle": "#c77b8b",
+    "active_layer": "#d47766",
+    "combo": "#ece1d7",
+    "dead_key": "#e49b5d",
+    "special": "#ebc06d"
   }
 }

@@ -2,12 +2,14 @@ use crate::parse::Keymap;
 use crate::parse::Layer;
 use camino::Utf8Path;
 use eyre::Result;
+use palette::{Hsl, IntoColor, Srgb};
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::str::FromStr;
 use std::sync::LazyLock;
 
 // TODO
@@ -23,12 +25,12 @@ pub fn render(keymap: &Keymap, render_opts: &Utf8Path, output_dir: &Utf8Path) ->
         render_layer(layer, &render_opts, output_dir)?;
     }
 
-    render_legend(&render_opts.legend, output_dir)?;
+    render_legend(&render_opts, output_dir)?;
 
     Ok(())
 }
 
-fn render_legend(legend: &[LegendSpec], output_dir: &Utf8Path) -> Result<()> {
+fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
     let path = output_dir.join("legend.svg");
     let mut file = File::create(path)?;
 
@@ -43,7 +45,7 @@ fn render_legend(legend: &[LegendSpec], output_dir: &Utf8Path) -> Result<()> {
     let inner_w = 4.0 * 42.0;
     let outer_w = inner_w + border_w * 2.0;
 
-    let item_count = legend.len();
+    let item_count = render_opts.legend.len();
     let columns = std::cmp::min(item_count, 4);
     let rows = item_count / columns;
 
@@ -70,7 +72,8 @@ fn render_legend(legend: &[LegendSpec], output_dir: &Utf8Path) -> Result<()> {
         .as_bytes(),
     )?;
 
-    for (i, item) in legend.iter().enumerate() {
+    let fallback_color = "#e5c494".to_string();
+    for (i, item) in render_opts.legend.iter().enumerate() {
         let row = i / columns;
         let col = i - row * columns;
 
@@ -86,16 +89,24 @@ fn render_legend(legend: &[LegendSpec], output_dir: &Utf8Path) -> Result<()> {
         let text_x = inner_x + inner_w / 2.0;
         let text_y = inner_y + inner_h / 2.0;
 
+        let outer_color = render_opts
+            .colors
+            .get(&item.class)
+            .unwrap_or(&fallback_color);
+
+        let inner_color = lighten_color(Srgb::from_str(outer_color).unwrap().into(), 0.05);
+        let inner_color = format!("#{:x}", Srgb::<u8>::from(inner_color));
+
         writeln!(
             file,
             r##"<g class="legend {class}">
 
       <rect x="{outer_x}" y="{outer_y}"
             width="{outer_w}" height="{outer_h}"
-            rx="5" fill="#e5c494" class="outer border"/>
+            rx="5" fill="{outer_color}" class="outer border"/>
       <rect x="{inner_x}" y="{inner_y}"
             width="{inner_w}" height="{inner_h}"
-            rx="5" fill="#fff3c1" class="inner border"/>
+            rx="5" fill="{inner_color}" class="inner border"/>
     <text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle">{txt}</text>
     </g>
 "##,
@@ -153,6 +164,7 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
         .as_bytes(),
     )?;
 
+    let fallback_color = "#e5c494".to_string();
     for key in layer.keys.iter() {
         let outer_x = keyboard_border + key.x * outer_w;
         let outer_y = keyboard_border + key.y * outer_w;
@@ -164,15 +176,20 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
 
         let class = key_opts.class;
 
+        let outer_color = render_opts.colors.get(&class).unwrap_or(&fallback_color);
+
+        let inner_color = lighten_color(Srgb::from_str(outer_color).unwrap().into(), 0.1);
+        let inner_color = format!("#{:x}", Srgb::<u8>::from(inner_color));
+
         writeln!(
             file,
             r##"    <g class="keycap {class}">
       <rect x="{outer_x}" y="{outer_y}"
             width="{outer_w}" height="{outer_w}"
-            rx="5" fill="#e5c494" class="outer border"/>
+            rx="5" fill="{outer_color}" class="outer border"/>
       <rect x="{inner_x}" y="{inner_y}"
             width="{inner_w}" height="{inner_w}"
-            rx="5" fill="#fff3c1" class="inner border"/>
+            rx="5" fill="{inner_color}" class="inner border"/>
 "##,
         )?;
 
@@ -204,8 +221,6 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
         }
 
         if let Some(subtxt) = key_opts.hold_title {
-            // let y_offset = 0.0;
-
             let text_x = inner_x + inner_w / 2.0;
             let text_y = inner_y + inner_w + 6.2;
 
@@ -227,6 +242,7 @@ struct RenderOpts {
     default_keys: HashMap<String, PartialKeyOpts>,
     layer_keys: HashMap<String, HashMap<String, PartialKeyOpts>>,
     legend: Vec<LegendSpec>,
+    colors: HashMap<String, String>,
 }
 
 impl RenderOpts {
@@ -264,6 +280,7 @@ impl RenderOpts {
             default_keys,
             layer_keys,
             legend: spec.legend,
+            colors: spec.colors,
         }
     }
 
@@ -393,6 +410,7 @@ impl PartialKeyOpts {
 struct RenderSpec {
     layers: LayersSpec,
     legend: Vec<LegendSpec>,
+    colors: HashMap<String, String>,
 }
 
 type LayersSpec = HashMap<String, LayerSpec>;
@@ -410,6 +428,18 @@ struct KeySpec {
 struct LegendSpec {
     class: String,
     title: String,
+}
+
+fn lighten_color(rgb: Srgb, amount: f32) -> Srgb {
+    // Convert RGB to HSL
+    let hsl: Hsl = rgb.into_color();
+
+    // Increase the lightness
+    let new_lightness = (hsl.lightness + amount).min(1.0); // Ensure it doesn't exceed 1.0
+    let new_hsl = Hsl::new(hsl.hue, hsl.saturation, new_lightness);
+
+    // Convert back to RGB
+    new_hsl.into_color()
 }
 
 #[cfg(test)]
