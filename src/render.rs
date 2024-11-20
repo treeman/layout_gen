@@ -2,7 +2,7 @@ use crate::parse::Keymap;
 use crate::parse::Layer;
 use camino::Utf8Path;
 use eyre::Result;
-use palette::{Hsl, IntoColor, Srgb};
+use palette::{Hsv, IntoColor, Srgb};
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -13,7 +13,6 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 // TODO
-// - Generate legend
 // - Generate combos
 // - Set default colors for different types
 // - Add wrapping class specifying keyboard/keymap name
@@ -431,15 +430,15 @@ struct LegendSpec {
 }
 
 fn lighten_color(rgb: Srgb, amount: f32) -> Srgb {
-    // Convert RGB to HSL
-    let hsl: Hsl = rgb.into_color();
+    // Convert RGB to HSV
+    let hsv: Hsv = rgb.into_color();
 
     // Increase the lightness
-    let new_lightness = (hsl.lightness + amount).min(1.0); // Ensure it doesn't exceed 1.0
-    let new_hsl = Hsl::new(hsl.hue, hsl.saturation, new_lightness);
+    let new_value = (hsv.value + amount).min(1.0); // Ensure it doesn't exceed 1.0
+    let new_hsv = Hsv::new(hsv.hue, hsv.saturation, new_value);
 
     // Convert back to RGB
-    new_hsl.into_color()
+    new_hsv.into_color()
 }
 
 #[cfg(test)]
