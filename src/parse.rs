@@ -1,3 +1,4 @@
+use camino::Utf8PathBuf;
 use eyre::{eyre, OptionExt, Result};
 use regex::Regex;
 use serde::Deserialize;
@@ -5,31 +6,96 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::LazyLock;
 
-use crate::InputSettings;
+use crate::render_opts::{MatrixHalf, MatrixPos, RenderOpts};
+
+#[derive(Debug)]
+pub struct ParseSettings {
+    pub qmk_root: Utf8PathBuf,
+    pub keyboard: String,
+    pub keymap: String,
+}
+
+impl ParseSettings {
+    pub fn combos_def(&self) -> Utf8PathBuf {
+        self.keymap_dir().join("combos.def")
+    }
+
+    pub fn keymap_c(&self) -> Utf8PathBuf {
+        self.keymap_dir().join("keymap.c")
+    }
+
+    pub fn keyboard_json(&self) -> Utf8PathBuf {
+        self.keyboard_dir().join("keyboard.json")
+    }
+
+    pub fn keyboard_dir(&self) -> Utf8PathBuf {
+        self.qmk_root.join("keyboards").join(&self.keyboard)
+    }
+
+    pub fn keymap_dir(&self) -> Utf8PathBuf {
+        self.keyboard_dir().join("keymaps").join(&self.keymap)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Keymap {
     pub layers: Vec<Layer>,
     pub combos: Vec<Combo>,
+    pub matrix_lookup: MatrixLookup,
 }
 
 impl Keymap {
-    pub fn parse(input: &InputSettings) -> Result<Self> {
+    pub fn parse(input: &ParseSettings, render_opts: &RenderOpts) -> Result<Self> {
         let keymap_c = fs::read_to_string(input.keymap_c())?;
-        let layer_defs = parse_layers_from_source(&keymap_c)?;
-
-        let combos_def = fs::read_to_string(input.combos_def())?;
-        let combos = parse_combos_from_source(&combos_def)?;
-
         let keyboard_json = fs::read_to_string(input.keyboard_json())?;
-        let keyboard_spec: KeyboardSpec = serde_json::from_str(&keyboard_json)?;
+        let combos_def = fs::read_to_string(input.combos_def())?;
+        Self::parse_from_source(&keymap_c, &keyboard_json, &combos_def, render_opts)
+    }
+
+    pub fn parse_from_source(
+        keymap_c: &str,
+        keyboard_json: &str,
+        combos_def: &str,
+        render_opts: &RenderOpts,
+    ) -> Result<Self> {
+        let layer_defs = parse_layers_from_source(keymap_c)?;
+        let keyboard_spec: KeyboardSpec = serde_json::from_str(keyboard_json)?;
 
         let layers = layer_defs
             .into_iter()
-            .map(|def| Layer::new(def, &keyboard_spec))
+            .map(|def| Layer::new(def, &keyboard_spec, render_opts))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { layers, combos })
+        let base_layer = &layers[0];
+        let matrix_lookup = MatrixLookup::from_base_layer(base_layer);
+
+        let combos = parse_combos_from_source(combos_def, base_layer)?;
+
+        Ok(Self {
+            layers,
+            combos,
+            matrix_lookup,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MatrixLookup {
+    keys: HashMap<(usize, usize), Key>,
+}
+
+impl MatrixLookup {
+    pub fn from_base_layer(base_layer: &Layer) -> Self {
+        let keys = base_layer
+            .keys
+            .iter()
+            .map(|key| ((key.matrix_pos.x, key.matrix_pos.y), key.clone()))
+            .collect();
+        Self { keys }
+    }
+
+    pub fn get(&self, col: usize, row: usize) -> Option<&Key> {
+        self.keys.get(&(col, row))
     }
 }
 
@@ -40,7 +106,7 @@ pub struct Layer {
 }
 
 impl Layer {
-    pub fn new(def: LayerDef, spec: &KeyboardSpec) -> Result<Self> {
+    pub fn new(def: LayerDef, spec: &KeyboardSpec, render_opts: &RenderOpts) -> Result<Self> {
         let layout_id = &def.layout_id.0;
         let layout_spec = spec
             .layouts
@@ -60,10 +126,12 @@ impl Layer {
             .keys
             .into_iter()
             .zip(layout_spec.layout.iter())
-            .map(|(id, spec)| Key {
+            .enumerate()
+            .map(|(i, (id, spec))| Key {
                 id,
                 x: spec.x,
                 y: spec.y,
+                matrix_pos: render_opts.matrix.index_to_matrix_pos(i),
             })
             .collect();
 
@@ -79,7 +147,7 @@ pub struct Key {
     pub id: KeyId,
     pub x: f32,
     pub y: f32,
-    // TODO rotation
+    pub matrix_pos: MatrixPos,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -104,10 +172,10 @@ pub enum ComboOutput {
     String(String),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Combo {
     pub output: ComboOutput,
-    pub keys: Vec<KeyId>,
+    pub keys: Vec<Key>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -116,6 +184,8 @@ pub struct Keyboard {}
 #[derive(Deserialize, Debug)]
 pub struct KeyboardSpec {
     layouts: HashMap<String, LayoutSpec>,
+    matrix_pins: MatrixPins,
+    split: SplitSpec,
 }
 
 #[derive(Deserialize, Debug)]
@@ -128,6 +198,23 @@ pub struct KeySpec {
     x: f32,
     y: f32,
     // TODO r
+}
+
+#[derive(Deserialize, Debug)]
+pub struct MatrixPins {
+    rows: Vec<String>,
+    cols: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SplitSpec {
+    matrix_pins: RightMatrixPins,
+    enabled: bool,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RightMatrixPins {
+    right: MatrixPins,
 }
 
 fn parse_layers_from_source(src: &str) -> Result<Vec<LayerDef>> {
@@ -169,7 +256,13 @@ fn parse_layers_from_source(src: &str) -> Result<Vec<LayerDef>> {
     }
 }
 
-fn parse_combos_from_source(src: &str) -> Result<Vec<Combo>> {
+fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>> {
+    let key_lookup: HashMap<String, Key> = base_layer
+        .keys
+        .iter()
+        .map(|key| (key.id.0.to_owned(), key.clone()))
+        .collect();
+
     static SPEC: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^\s*(COMB|SUBS)\((.+)\)\s*$").unwrap());
 
@@ -184,7 +277,10 @@ fn parse_combos_from_source(src: &str) -> Result<Vec<Combo>> {
                 _ => panic!("No SUBS or COMB in regex match {}", &spec[1]),
             };
 
-            let keys = args[2..].iter().map(|x| KeyId(x.to_string())).collect();
+            let keys = args[2..]
+                .iter()
+                .map(|x| key_lookup.get(*x).unwrap().clone())
+                .collect();
             res.push(Combo { output, keys });
         }
     }
@@ -197,8 +293,8 @@ mod tests {
     use eyre::Result;
 
     #[test]
-    fn test_parse_layers() -> Result<()> {
-        let input = r#"
+    fn test_parse_keymap() -> Result<()> {
+        let keymap_c = r#"
 // clang-format off
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
@@ -217,49 +313,133 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     )
 };
         "#;
-        let layers = parse_layers_from_source(input)?;
-        assert!(layers.len() == 2);
-        assert!(layers[0].layer_id.0 == "_BASE");
-        assert!(layers[0].keys.len() == 35);
-        assert!(layers[1].layer_id.0 == "_NUM");
-        assert!(layers[1].keys[1].0 == "SE_PLUS");
-        Ok(())
-    }
+        let keyboard_json = r#"
+{
+    "layouts": {
+        "LAYOUT": {
+            "layout": [
+                { "matrix": [1, 0], "x": 0, "y": 0.93 },
+                { "matrix": [0, 1], "x": 1, "y": 0.31 },
+                { "matrix": [0, 2], "x": 2, "y": 0 },
+                { "matrix": [0, 3], "x": 3, "y": 0.28 },
+                { "matrix": [0, 4], "x": 4, "y": 0.42 },
+                { "matrix": [4, 0], "x": 7, "y": 0.42 },
+                { "matrix": [4, 1], "x": 8, "y": 0.28 },
+                { "matrix": [4, 2], "x": 9, "y": 0 },
+                { "matrix": [4, 3], "x": 10, "y": 0.31 },
+                { "matrix": [4, 4], "x": 11, "y": 0.93 },
 
-    #[test]
-    fn test_parse_combos() -> Result<()> {
-        let input = r#"
+                { "matrix": [2, 0], "x": 0, "y": 1.93 },
+                { "matrix": [1, 1], "x": 1, "y": 1.31 },
+                { "matrix": [1, 2], "x": 2, "y": 1 },
+                { "matrix": [1, 3], "x": 3, "y": 1.28 },
+                { "matrix": [1, 4], "x": 4, "y": 1.42 },
+                { "matrix": [5, 0], "x": 7, "y": 1.42 },
+                { "matrix": [5, 1], "x": 8, "y": 1.28 },
+                { "matrix": [5, 2], "x": 9, "y": 1 },
+                { "matrix": [5, 3], "x": 10, "y": 1.31 },
+                { "matrix": [5, 4], "x": 11, "y": 1.93 },
+
+                { "matrix": [3, 0], "x": 0, "y": 2.93 },
+                { "matrix": [2, 1], "x": 1, "y": 2.31 },
+                { "matrix": [2, 2], "x": 2, "y": 2 },
+                { "matrix": [2, 3], "x": 3, "y": 2.28 },
+                { "matrix": [2, 4], "x": 4, "y": 2.42 },
+                { "matrix": [6, 0], "x": 7, "y": 2.42 },
+                { "matrix": [6, 1], "x": 8, "y": 2.28 },
+                { "matrix": [6, 2], "x": 9, "y": 2 },
+                { "matrix": [6, 3], "x": 10, "y": 2.31 },
+                { "matrix": [6, 4], "x": 11, "y": 2.93 },
+
+                { "matrix": [3, 1], "x": 1, "y": 3.31 },
+                { "matrix": [3, 2], "x": 2, "y": 3 },
+
+                { "matrix": [3, 3], "x": 3.5, "y": 3.75 },
+                { "matrix": [3, 4], "x": 4.5, "y": 4 },
+                { "matrix": [7, 0], "x": 6.5, "y": 4 }
+            ]
+        }
+    },
+    "matrix_pins": {
+        "rows": ["GP26", "GP27", "GP22", "GP20"],
+        "cols": ["GP3", "GP4", "GP5", "GP6", "GP7"]
+    },
+    "split": {
+        "enabled": true,
+        "matrix_pins": {
+            "right": {
+                "rows": ["GP27", "GP26", "GP22", "GP20"],
+                "cols": ["GP3", "GP4", "GP5", "GP6", "GP7"]
+            }
+        }
+    }
+}
+        "#;
+
+        let combos_def = r#"
 // Thumbs
 COMB(num,               NUMWORD,        MT_SPC, SE_E)
 
 SUBS(https,             "https://",     MT_SPC, SE_SLSH)
 COMB(comb_boot_r,       QK_BOOT,        SE_E, SE_L, SE_LPRN, SE_RPRN, SE_UNDS)
         "#;
-        let combos = parse_combos_from_source(input)?;
-        assert!(combos.len() == 3);
-        assert!(combos[0].output == ComboOutput::Key(KeyId("NUMWORD".to_string())));
-        assert!(combos[0].keys == vec![KeyId("MT_SPC".to_string()), KeyId("SE_E".to_string())]);
-        assert!(combos[1].output == ComboOutput::String("https://".to_string()));
-        assert!(combos[1].keys == vec![KeyId("MT_SPC".to_string()), KeyId("SE_SLSH".to_string())]);
-        Ok(())
-    }
 
-    #[test]
-    fn test_parse_keyboard() -> Result<()> {
-        let input = r#"
+        let render_input = r#"
 {
-    "layouts": {
-        "LAYOUT": {
-            "layout": [
-                { "matrix": [1, 0], "x": 0, "y": 1 },
-                { "matrix": [0, 1], "x": 2, "y": 3 }
-            ]
-        }
-    }
+  "layers": {},
+  "colors": {},
+  "legend": [],
+  "matrix": {
+    "left_rows": [5, 5, 5, 4],
+    "right_rows": [5, 5, 5, 1]
+  }
 }
         "#;
+        let render_opts = RenderOpts::parse_from_str(render_input)?;
 
-        let _spec: KeyboardSpec = serde_json::from_str(input)?;
+        let keymap = Keymap::parse_from_source(keymap_c, keyboard_json, combos_def, &render_opts)?;
+
+        assert_eq!(keymap.matrix_lookup.get(0, 0).unwrap().id.0, "SE_J");
+        assert_eq!(keymap.matrix_lookup.get(2, 1).unwrap().id.0, "SE_T");
+        assert_eq!(keymap.matrix_lookup.get(3, 3).unwrap().id.0, "MT_SPC");
+        assert!(keymap.matrix_lookup.get(0, 4).is_none());
+
+        assert_eq!(keymap.layers.len(), 2);
+        assert_eq!(keymap.layers[0].id.0, "_BASE");
+        assert_eq!(keymap.layers[0].keys.len(), 35);
+        assert_eq!(keymap.layers[1].id.0, "_NUM");
+        assert_eq!(keymap.layers[1].keys[1].id.0, "SE_PLUS");
+
+        assert_eq!(keymap.combos.len(), 3);
+        assert_eq!(
+            keymap.combos[0].output,
+            ComboOutput::Key(KeyId("NUMWORD".into()))
+        );
+        assert_eq!(keymap.combos[0].keys[0].id.0, "MT_SPC");
+        assert_eq!(keymap.combos[0].keys[1].id.0, "SE_E");
+        assert_eq!(
+            keymap.combos[0].keys[0].matrix_pos,
+            MatrixPos {
+                x: 3,
+                y: 3,
+                half: MatrixHalf::Left
+            }
+        );
+        assert_eq!(
+            keymap.combos[0].keys[1].matrix_pos,
+            MatrixPos {
+                x: 4,
+                y: 3,
+                half: MatrixHalf::Right
+            }
+        );
+
+        // TODO
+        // Combo:
+        // is_horizontal_neighbour
+        // is_vertical_neighbour
+        // contains_input_key
+
         Ok(())
     }
 }
