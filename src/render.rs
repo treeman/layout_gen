@@ -1,17 +1,13 @@
+use crate::parse::Combo;
 use crate::parse::Keymap;
 use crate::parse::Layer;
 use crate::render_opts::RenderOpts;
 use camino::Utf8Path;
 use eyre::Result;
 use palette::{Hsv, IntoColor, Srgb};
-use regex::Regex;
-use serde::Deserialize;
-use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::str::FromStr;
-use std::sync::LazyLock;
 
 // TODO
 // - Generate combos
@@ -24,6 +20,8 @@ pub fn render(keymap: &Keymap, render_opts: &RenderOpts, output_dir: &Utf8Path) 
     }
 
     render_legend(&render_opts, output_dir)?;
+
+    render_combos(&keymap.combos, &render_opts, output_dir)?;
 
     Ok(())
 }
@@ -231,6 +229,54 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
     }
 
     file.write_all("</svg>".as_bytes())?;
+
+    Ok(())
+}
+
+fn render_combos(combos: &[Combo], render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
+    let mut horizontal_combos = Vec::new();
+    let mut vertical_combos = Vec::new();
+
+    // TODO don't hardcode these
+    let mut e_combos = Vec::new();
+    let mut spc_combos = Vec::new();
+    let mut fun_combos = Vec::new();
+
+    let mut other_combos = Vec::new();
+
+    for combo in combos {
+        if combo.is_horizontal_neighbour() {
+            horizontal_combos.push(combo);
+        } else if combo.is_vertical_neighbour() {
+            vertical_combos.push(combo);
+            // FIXME can be both E and SPC
+        } else if combo.contains_input_key("SE_E") && combo.keys.len() == 2 {
+            e_combos.push(combo);
+        } else if combo.contains_input_key("MT_SPC") && combo.keys.len() == 2 {
+            spc_combos.push(combo);
+        } else if combo.contains_input_key("FUN") && combo.keys.len() == 2 {
+            fun_combos.push(combo);
+        } else {
+            other_combos.push(combo);
+        }
+    }
+
+    println!(
+        "hor: {} ver: {} e: {} spc: {} fun: {} other: {}",
+        horizontal_combos.len(),
+        vertical_combos.len(),
+        e_combos.len(),
+        spc_combos.len(),
+        fun_combos.len(),
+        other_combos.len()
+    );
+
+    for combo in other_combos {
+        for x in &combo.keys {
+            print!(" {}", x.id.0);
+        }
+        println!();
+    }
 
     Ok(())
 }

@@ -178,6 +178,34 @@ pub struct Combo {
     pub keys: Vec<Key>,
 }
 
+impl Combo {
+    pub fn is_horizontal_neighbour(&self) -> bool {
+        if self.keys.len() != 2 {
+            return false;
+        }
+        let a = &self.keys[0];
+        let b = &self.keys[1];
+
+        a.matrix_pos.y == b.matrix_pos.y
+            && (a.matrix_pos.x as i32 - b.matrix_pos.x as i32).abs() == 1
+    }
+
+    pub fn is_vertical_neighbour(&self) -> bool {
+        if self.keys.len() != 2 {
+            return false;
+        }
+        let a = &self.keys[0];
+        let b = &self.keys[1];
+
+        a.matrix_pos.x == b.matrix_pos.x
+            && (a.matrix_pos.y as i32 - b.matrix_pos.y as i32).abs() == 1
+    }
+
+    pub fn contains_input_key(&self, input: &str) -> bool {
+        self.keys.iter().any(|key| key.id.0 == input)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Keyboard {}
 
@@ -377,11 +405,14 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         "#;
 
         let combos_def = r#"
-// Thumbs
+// Comment
 COMB(num,               NUMWORD,        MT_SPC, SE_E)
 
 SUBS(https,             "https://",     MT_SPC, SE_SLSH)
 COMB(comb_boot_r,       QK_BOOT,        SE_E, SE_L, SE_LPRN, SE_RPRN, SE_UNDS)
+
+COMB(escape_sym,        ESC_SYM,        SE_T, SE_H)
+SUBS(lt_eq,             "<=",           SE_F, SE_H)
         "#;
 
         let render_input = r#"
@@ -410,7 +441,7 @@ COMB(comb_boot_r,       QK_BOOT,        SE_E, SE_L, SE_LPRN, SE_RPRN, SE_UNDS)
         assert_eq!(keymap.layers[1].id.0, "_NUM");
         assert_eq!(keymap.layers[1].keys[1].id.0, "SE_PLUS");
 
-        assert_eq!(keymap.combos.len(), 3);
+        assert_eq!(keymap.combos.len(), 5);
         assert_eq!(
             keymap.combos[0].output,
             ComboOutput::Key(KeyId("NUMWORD".into()))
@@ -433,12 +464,12 @@ COMB(comb_boot_r,       QK_BOOT,        SE_E, SE_L, SE_LPRN, SE_RPRN, SE_UNDS)
                 half: MatrixHalf::Right
             }
         );
-
-        // TODO
-        // Combo:
-        // is_horizontal_neighbour
-        // is_vertical_neighbour
-        // contains_input_key
+        assert!(keymap.combos[1].contains_input_key("MT_SPC"));
+        assert!(!keymap.combos[3].contains_input_key("MT_SPC"));
+        assert!(keymap.combos[3].is_horizontal_neighbour());
+        assert!(!keymap.combos[3].is_vertical_neighbour());
+        assert!(!keymap.combos[4].is_horizontal_neighbour());
+        assert!(keymap.combos[4].is_vertical_neighbour());
 
         Ok(())
     }
