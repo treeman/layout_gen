@@ -284,15 +284,6 @@ impl<'a> CombosWithLayerRender<'a> {
 
         let key_w = 54.0;
         let keymap_border = 10.0;
-
-        let combo_key_h = 16.0;
-        let combo_char_w = 5.0;
-
-        let border_x = 1.5;
-        let border_top = 1.0;
-        let border_bottom = 2.5;
-
-        let text_padding = 10.0;
         let combo_text_h = 8.0;
 
         let mut max_x: f32 = 0.0;
@@ -347,109 +338,14 @@ impl<'a> CombosWithLayerRender<'a> {
                 .get(class)
                 .unwrap_or(&fallback_color);
 
-            // ComboRender {
-            //     x,
-            //     y,
-            //     w,
-            //     combo,
-            //     title,
-            //     class,
-            //     outer_color,
-            //     min_w: 80.0,
-            // }
-            // .render(&mut file)?;
-
-            if combo.is_vertical_neighbour() {
-                let calc_w = |title: &str| {
-                    let calc = title.chars().count() as f32 * combo_char_w + text_padding;
-                    calc.max(28.0)
-                };
-                let w = calc_w(title);
-
-                let a = &combo.keys[0];
-                let b = &combo.keys[1];
-
-                let x = keymap_border + a.x * key_w + key_w / 2.0 - w / 2.0;
-                let y = keymap_border + (1.0 + a.y.min(b.y)) * key_w - combo_key_h / 2.0;
-
-                ComboRender {
-                    x,
-                    y,
-                    w,
-                    combo,
-                    title,
-                    class,
-                    outer_color,
-                    min_w: 80.0,
-                }
-                .render(&mut file)?;
-            } else if combo.is_horizontal_neighbour() {
-                let calc_w = |title: &str| {
-                    let calc = title.chars().count() as f32 * combo_char_w + text_padding;
-                    calc.max(28.0)
-                };
-                let w = calc_w(title);
-
-                let a = &combo.keys[0];
-                let b = &combo.keys[1];
-
-                // The top y that intersects both keys
-                let top_y_edge = a.y.max(b.y) * key_w;
-                // The bottom y that intersects both keys
-                let bottom_y_edge = a.y.min(b.y) * key_w + key_w;
-                // Finds the middle of the intersection.
-                let mid_y = top_y_edge + (bottom_y_edge - top_y_edge) / 2.0;
-                // Offset with border and center the key at middle.
-                let y = keymap_border + mid_y - combo_key_h / 2.0;
-                // Right in the middle of the keys.
-                let x = keymap_border + a.x.max(b.x) * key_w - w / 2.0;
-
-                ComboRender {
-                    x,
-                    y,
-                    w,
-                    combo,
-                    title,
-                    class,
-                    outer_color,
-                    min_w: 80.0,
-                }
-                .render(&mut file)?;
-            } else if combo.is_mid_triple() {
-                let calc_w = |title: &str| {
-                    let calc = title.chars().count() as f32 * combo_char_w + text_padding;
-                    calc.max(80.0)
-                };
-
-                let w = calc_w(title);
-
-                let a = &combo.keys[0];
-                let b = &combo.keys[1];
-                let c = &combo.keys[2];
-
-                // The top y that intersects both keys
-                let top_y_edge = a.y.max(b.y).max(c.y) * key_w;
-                // The bottom y that intersects both keys
-                let bottom_y_edge = a.y.min(b.y).min(c.y) * key_w + key_w;
-                // Finds the middle of the intersection.
-                let mid_y = top_y_edge + (bottom_y_edge - top_y_edge) / 2.0;
-                // Offset with border and center the key at middle.
-                let y = keymap_border + mid_y - combo_key_h / 2.0;
-                // Right in the middle of the keys.
-                let x = keymap_border + (1.5 + a.x) * key_w - w / 2.0;
-
-                ComboRender {
-                    x,
-                    y,
-                    w,
-                    combo,
-                    title,
-                    class,
-                    outer_color,
-                    min_w: 80.0,
-                }
-                .render(&mut file)?;
+            ComboRender {
+                combo,
+                title,
+                class,
+                outer_color,
+                keymap_border,
             }
+            .render(&mut file)?;
         }
 
         writeln!(file, r#"</g>"#)?;
@@ -461,43 +357,26 @@ impl<'a> CombosWithLayerRender<'a> {
 }
 
 struct ComboRender<'a> {
-    x: f32,
-    y: f32,
-    w: f32,
     combo: &'a Combo,
     title: &'a str,
     class: &'a str,
     outer_color: &'a str,
-    min_w: f32,
+    keymap_border: f32,
 }
 
 impl<'a> ComboRender<'a> {
-    fn render(&self, file: &mut File) -> Result<()> {
-        // let key_w = 54.0;
-        // let keymap_border = 10.0;
-
-        let combo_key_h = 16.0;
-        let combo_char_w = 5.0;
-
+    fn render_key(&self, x: f32, y: f32, w: f32, h: f32, file: &mut File) -> Result<()> {
         let border_x = 1.5;
         let border_top = 1.0;
         let border_bottom = 2.5;
 
-        let text_padding = 10.0;
         let combo_text_h = 8.0;
 
-        let calc_w = |title: &str| {
-            let calc = title.chars().count() as f32 * combo_char_w + text_padding;
-            calc.max(self.min_w)
-        };
-
-        let w = calc_w(self.title);
-
         KeyRender {
-            x: self.x,
-            y: self.y,
-            w: self.w,
-            h: combo_key_h,
+            x,
+            y,
+            w,
+            h,
             rx: 4.0,
             class: self.class,
             outer_color: self.outer_color,
@@ -510,6 +389,68 @@ impl<'a> ComboRender<'a> {
             text_h: combo_text_h,
         }
         .render(file)?;
+        Ok(())
+    }
+
+    fn render(&self, file: &mut File) -> Result<()> {
+        let key_w = 54.0;
+        let combo_char_w = 5.0;
+        let text_padding = 10.0;
+        let combo_key_h = 16.0;
+
+        let calc_w = |title: &str, min_w: f32| {
+            let calc = title.chars().count() as f32 * combo_char_w + text_padding;
+            calc.max(min_w)
+        };
+
+        if self.combo.is_vertical_neighbour() {
+            let w = calc_w(self.title, 28.0);
+
+            let a = &self.combo.keys[0];
+            let b = &self.combo.keys[1];
+
+            let x = self.keymap_border + a.x * key_w + key_w / 2.0 - w / 2.0;
+            let y = self.keymap_border + (1.0 + a.y.min(b.y)) * key_w - combo_key_h / 2.0;
+
+            self.render_key(x, y, w, combo_key_h, file)?;
+        } else if self.combo.is_horizontal_neighbour() {
+            let w = calc_w(self.title, 28.0);
+
+            let a = &self.combo.keys[0];
+            let b = &self.combo.keys[1];
+
+            // The top y that intersects both keys
+            let top_y_edge = a.y.max(b.y) * key_w;
+            // The bottom y that intersects both keys
+            let bottom_y_edge = a.y.min(b.y) * key_w + key_w;
+            // Finds the middle of the intersection.
+            let mid_y = top_y_edge + (bottom_y_edge - top_y_edge) / 2.0;
+            // Offset with border and center the key at middle.
+            let y = self.keymap_border + mid_y - combo_key_h / 2.0;
+            // Right in the middle of the keys.
+            let x = self.keymap_border + a.x.max(b.x) * key_w - w / 2.0;
+
+            self.render_key(x, y, w, combo_key_h, file)?;
+        } else if self.combo.is_mid_triple() {
+            let w = calc_w(self.title, 80.0);
+
+            let a = &self.combo.keys[0];
+            let b = &self.combo.keys[1];
+            let c = &self.combo.keys[2];
+
+            // The top y that intersects both keys
+            let top_y_edge = a.y.max(b.y).max(c.y) * key_w;
+            // The bottom y that intersects both keys
+            let bottom_y_edge = a.y.min(b.y).min(c.y) * key_w + key_w;
+            // Finds the middle of the intersection.
+            let mid_y = top_y_edge + (bottom_y_edge - top_y_edge) / 2.0;
+            // Offset with border and center the key at middle.
+            let y = self.keymap_border + mid_y - combo_key_h / 2.0;
+            // Right in the middle of the keys.
+            let x = self.keymap_border + (1.5 + a.x) * key_w - w / 2.0;
+
+            self.render_key(x, y, w, combo_key_h, file)?;
+        }
         Ok(())
     }
 }
