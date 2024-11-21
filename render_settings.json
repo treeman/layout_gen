@@ -191,6 +191,15 @@
         "class": "layer_toggle"
       },
       {
+        "keys": ["E_ACUT"],
+        "title": "É"
+      },
+      {
+        "keys": ["NUMWORD"],
+        "title": "NUM\nWORD",
+        "class": "layer_toggle"
+      },
+      {
         "keys": ["VIM_SP"],
         "title": "hsplit"
       },
@@ -444,7 +453,8 @@
   },
   "combos": {
     "background_layer_class": "combo_background",
-    "keys_with_separate_imgs": ["SE_E", "MT_SPC", "FUN"]
+    "keys_with_separate_imgs": ["SE_E", "MT_SPC", "FUN"],
+    "active_class_in_separate_layer": "active_layer"
   },
   "colors": {
     "blank": "#e9e1db",

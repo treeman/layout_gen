@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::sync::LazyLock;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RenderOpts {
     pub default_keys: HashMap<String, PartialKeyOpts>,
     pub layer_keys: HashMap<String, HashMap<String, PartialKeyOpts>>,
@@ -207,7 +207,7 @@ struct KeySpec {
     class: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct LegendSpec {
     pub class: String,
     pub title: String,
@@ -236,6 +236,7 @@ pub struct MatrixPos {
 pub struct CombosSpec {
     pub background_layer_class: String,
     pub keys_with_separate_imgs: HashSet<String>,
+    pub active_class_in_separate_layer: String,
 }
 
 impl MatrixSpec {

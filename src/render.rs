@@ -142,31 +142,61 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
         .as_bytes(),
     )?;
 
-    write_layer_keys(&mut file, layer, render_opts, keymap_border, key_w, None)?;
+    write_layer_keys(
+        &mut file,
+        layer,
+        render_opts,
+        keymap_border,
+        key_w,
+        None,
+        None,
+        None,
+    )?;
 
     file.write_all("</svg>".as_bytes())?;
 
     Ok(())
 }
 
+// TODO split out in strut
+// TODO can render svg viewport as well
+// TODO should be able to only render one half of the keyboard
+#[allow(clippy::too_many_arguments)]
 fn write_layer_keys(
     file: &mut File,
     layer: &Layer,
     render_opts: &RenderOpts,
     keymap_border: f32,
     key_w: f32,
-    override_class: Option<&String>,
+    override_class: Option<&str>,
+    override_class_map: Option<HashMap<&str, String>>,
+    blank_class: Option<&str>,
 ) -> Result<()> {
     let fallback_color = "#e5c494".to_string();
     for key in layer.keys.iter() {
         let key_opts = render_opts.get(&layer.id.0, &key.id.0);
-        let class = override_class.unwrap_or(&key_opts.class);
+        let mut class = key_opts.class.as_str();
+        if let Some(x) = override_class {
+            class = x;
+        }
+
+        if let Some(override_map) = &override_class_map {
+            if let Some(x) = override_map.get(key.id.0.as_str()) {
+                class = x;
+            }
+        }
         let outer_color = render_opts.colors.get(class).unwrap_or(&fallback_color);
 
         let x = keymap_border + key.x * key_w;
         let y = keymap_border + key.y * key_w;
         let w = key_w;
         let h = key_w;
+
+        let (title, hold_title) = if Some(class) == blank_class {
+            ("", None)
+        } else {
+            (key_opts.title.as_str(), key_opts.hold_title.as_deref())
+        };
 
         KeyRender {
             x,
@@ -176,8 +206,8 @@ fn write_layer_keys(
             rx: 5.0,
             class,
             outer_color,
-            title: &key_opts.title,
-            hold_title: key_opts.hold_title.as_deref(),
+            title,
+            hold_title,
             border_left: 6.0,
             border_right: 6.0,
             border_top: 4.0,
@@ -196,12 +226,8 @@ fn render_combos(
     output_dir: &Utf8Path,
 ) -> Result<()> {
     let mut mid_triple_combos = Vec::new();
-    // let mut horizontal_combos = Vec::new();
     let mut neighbour_combos = Vec::new();
-    // let mut vertical_combos = Vec::new();
-
     let mut combos_with_separate_layouts = HashMap::new();
-
     let mut other_combos = Vec::new();
 
     for combo in combos {
@@ -230,24 +256,6 @@ fn render_combos(
         }
     }
 
-    // dbg!(&combos_with_separate_layouts);
-
-    println!("Neighbours: {}", neighbour_combos.len());
-    // println!("Ver: {}", vertical_combos.len());
-    println!("Triple: {}", mid_triple_combos.len());
-    for (key, combos) in combos_with_separate_layouts {
-        println!("{}: {}", key, combos.len());
-    }
-    println!("Other: {}", other_combos.len());
-    println!("Total: {}", combos.len());
-
-    // for combo in other_combos {
-    //     for x in &combo.keys {
-    //         print!(" {}", x.id.0);
-    //     }
-    //     println!();
-    // }
-
     CombosWithLayerRender {
         combos: &neighbour_combos,
         base_layer,
@@ -264,9 +272,34 @@ fn render_combos(
     }
     .render()?;
 
-    // for () in combos_with_separate_layouts {
-    //
-    // }
+    for (active_key, combos) in &combos_with_separate_layouts {
+        ComboSeparateLayerRender {
+            active_key,
+            combos,
+            base_layer,
+            render_opts,
+            path: &output_dir.join(format!("{active_key}.svg")),
+        }
+        .render()?;
+    }
+
+    for combo in &other_combos {
+        ComboSingleRender {
+            combo,
+            base_layer,
+            render_opts,
+            path: &output_dir.join(format!("{}.svg", combo.id)),
+        }
+        .render()?;
+    }
+
+    println!("Neighbours: {}", neighbour_combos.len());
+    println!("Triple: {}", mid_triple_combos.len());
+    for (key, combos) in &combos_with_separate_layouts {
+        println!("{}: {}", key, combos.len());
+    }
+    println!("Other: {}", other_combos.len());
+    println!("Total: {}", combos.len());
 
     Ok(())
 }
@@ -322,7 +355,9 @@ impl<'a> CombosWithLayerRender<'a> {
             self.render_opts,
             keymap_border,
             key_w,
-            Some(&self.render_opts.combos.background_layer_class),
+            Some(self.render_opts.combos.background_layer_class.as_str()),
+            None,
+            None,
         )?;
 
         let fallback_color = "#e5c494".to_string();
@@ -455,6 +490,175 @@ impl<'a> ComboRender<'a> {
     }
 }
 
+struct ComboSeparateLayerRender<'a> {
+    active_key: &'a str,
+    combos: &'a [&'a Combo],
+    base_layer: &'a Layer,
+    render_opts: &'a RenderOpts,
+    path: &'a Utf8Path,
+}
+
+impl<'a> ComboSeparateLayerRender<'a> {
+    fn render(&self) -> Result<()> {
+        let mut layer = self.base_layer.clone();
+
+        let mut class_overrides = HashMap::new();
+        for combo in self.combos {
+            let output_opts = self.render_opts.get(&self.base_layer.id.0, &combo.output);
+            for key in &combo.keys {
+                if key.id.0 == self.active_key {
+                    continue;
+                }
+                layer.replace_key_id(&key.id.0, &combo.output);
+
+                class_overrides.insert(combo.output.as_str(), output_opts.class.to_string());
+            }
+        }
+        class_overrides.insert(
+            self.active_key,
+            self.render_opts
+                .combos
+                .active_class_in_separate_layer
+                .clone(),
+        );
+
+        let mut file = File::create(self.path)?;
+
+        let key_w = 54.0;
+        let keymap_border = 10.0;
+        let combo_text_h = 8.0;
+
+        let mut max_x: f32 = 0.0;
+        let mut max_y: f32 = 0.0;
+        for key in layer.keys.iter() {
+            max_x = max_x.max((1.0 + key.x) * key_w);
+            max_y = max_y.max((1.0 + key.y) * key_w);
+        }
+        max_x += keymap_border * 2.0;
+        max_y += keymap_border * 2.0;
+
+        writeln!(
+            file,
+            r#"<svg width='{max_x}px'
+       height='{max_y}x'
+       viewBox='0 0 {max_x} {max_y}'
+       xmlns='http://www.w3.org/2000/svg'
+       xmlns:xlink="http://www.w3.org/1999/xlink">
+"#
+        )?;
+
+        writeln!(
+            file,
+            r#" <style type='text/css'>
+    .keycap .border {{ stroke: black; stroke-width: 1; }}
+    .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
+    .keycap {{ font-family: sans-serif; font-size: 11px}}
+    .combos .keycap {{ font-size: {combo_text_h}px}}
+  </style>
+"#
+        )?;
+
+        let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
+
+        write_layer_keys(
+            &mut file,
+            &layer,
+            self.render_opts,
+            keymap_border,
+            key_w,
+            Some(background_layer_class),
+            Some(class_overrides),
+            Some(background_layer_class),
+        )?;
+
+        writeln!(file, r"</svg>")?;
+
+        Ok(())
+    }
+}
+
+struct ComboSingleRender<'a> {
+    combo: &'a Combo,
+    base_layer: &'a Layer,
+    render_opts: &'a RenderOpts,
+    path: &'a Utf8Path,
+}
+
+impl<'a> ComboSingleRender<'a> {
+    fn render(&self) -> Result<()> {
+        let mut class_overrides = HashMap::new();
+        let output_opts = self
+            .render_opts
+            .get(&self.base_layer.id.0, &self.combo.output);
+        for key in &self.combo.keys {
+            class_overrides.insert(key.id.0.as_str(), output_opts.class.to_string());
+        }
+
+        let mut file = File::create(self.path)?;
+
+        let key_w = 54.0;
+        let keymap_border = 10.0;
+        let combo_text_h = 8.0;
+
+        let mut max_x: f32 = 0.0;
+        let mut max_y: f32 = 0.0;
+        for key in self.base_layer.keys.iter() {
+            max_x = max_x.max((1.0 + key.x) * key_w);
+            max_y = max_y.max((1.0 + key.y) * key_w);
+        }
+        max_x += keymap_border * 2.0;
+        max_y += keymap_border * 2.0;
+
+        writeln!(
+            file,
+            r#"<svg width='{max_x}px'
+       height='{max_y}x'
+       viewBox='0 0 {max_x} {max_y}'
+       xmlns='http://www.w3.org/2000/svg'
+       xmlns:xlink="http://www.w3.org/1999/xlink">
+"#
+        )?;
+
+        writeln!(
+            file,
+            r#" <style type='text/css'>
+    .keycap .border {{ stroke: black; stroke-width: 1; }}
+    .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
+    .keycap {{ font-family: sans-serif; font-size: 11px}}
+    .combo-output {{ font-family: sans-serif; font-size: 16px}}
+    .combos .keycap {{ font-size: {combo_text_h}px}}
+  </style>
+"#
+        )?;
+
+        let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
+
+        write_layer_keys(
+            &mut file,
+            self.base_layer,
+            self.render_opts,
+            keymap_border,
+            key_w,
+            Some(background_layer_class),
+            Some(class_overrides),
+            None,
+        )?;
+
+        let text_x = max_x / 2.0;
+        let text_y = 12.0;
+        let text = &self.combo.output;
+
+        writeln!(
+            file,
+            r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle" class="combo-output">{text}</text>"#
+        )?;
+
+        writeln!(file, r"</svg>")?;
+
+        Ok(())
+    }
+}
+
 struct KeyRender<'a> {
     x: f32,
     y: f32,
@@ -540,119 +744,6 @@ impl<'a> KeyRender<'a> {
         Ok(())
     }
 }
-
-// #[allow(clippy::too_many_arguments)]
-// fn write_bordered_key(
-//     file: &mut File,
-//     outer_x: f32,
-//     outer_y: f32,
-//     outer_w: f32,
-//     outer_h: f32,
-//     class: &str,
-//     outer_color: &str,
-//     title: &str,
-//     hold_title: Option<&str>,
-// ) -> Result<()> {
-//     let border_w = 6.0;
-//     let border_top = 4.0;
-//
-//     let inner_w = outer_w - border_w * 2.0;
-//     let inner_h = outer_h - border_w * 2.0;
-//
-//     let inner_x = outer_x + border_w;
-//     let inner_y = outer_y + border_top;
-//
-//     let inner_color = lighten_color(Srgb::from_str(outer_color).unwrap().into(), 0.1);
-//     let inner_color = format!("#{:x}", Srgb::<u8>::from(inner_color));
-//
-//     writeln!(
-//         file,
-//         r##"    <g class="keycap {class}">
-//       <rect x="{outer_x}" y="{outer_y}"
-//             width="{outer_w}" height="{outer_h}"
-//             rx="5" fill="{outer_color}" class="outer border"/>
-//       <rect x="{inner_x}" y="{inner_y}"
-//             width="{inner_w}" height="{inner_h}"
-//             rx="5" fill="{inner_color}" class="inner border"/>
-// "##,
-//     )?;
-//
-//     let text_h = 12.0;
-//
-//     let text = title.lines().collect::<Vec<_>>();
-//     if !text.is_empty() {
-//         let y_offset = (text.len() - 1) as f32 * text_h / 2.0;
-//         let text_x = inner_x + inner_w / 2.0;
-//         let text_y = inner_y + inner_h / 2.0 - y_offset;
-//
-//         writeln!(
-//             file,
-//             r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle" class="main">"#
-//         )?;
-//
-//         for (i, txt) in text.into_iter().enumerate() {
-//             let txt = html_escape::encode_safe(&txt);
-//             let dy = match i {
-//                 0 => 0.0,
-//                 _ => text_h,
-//             };
-//             writeln!(file, r#"<tspan x="{text_x}" dy="{dy}">{txt}</tspan>"#)?;
-//         }
-//
-//         writeln!(file, "</text>")?;
-//     }
-//
-//     if let Some(subtxt) = hold_title {
-//         let text_x = inner_x + inner_w / 2.0;
-//         let text_y = inner_y + inner_w + 6.2;
-//
-//         writeln!(
-//             file,
-//             r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" class="sub">{subtxt}</text>"#
-//         )?;
-//     }
-//     writeln!(file, "</g>")?;
-//
-//     Ok(())
-// }
-//
-// #[allow(clippy::too_many_arguments)]
-// fn write_unbordered_key(
-//     file: &mut File,
-//     x: f32,
-//     y: f32,
-//     w: f32,
-//     h: f32,
-//     class: &str,
-//     color: &str,
-//     title: &str,
-// ) -> Result<()> {
-//     writeln!(
-//         file,
-//         r##"    <g class="keycap {class}">
-//       <rect x="{x}" y="{y}"
-//             width="{w}" height="{h}"
-//             rx="4" fill="{color}" class="inner border"/>
-// "##,
-//     )?;
-//
-//     let text_h = 12.0;
-//
-//     let text = html_escape::encode_safe(&title);
-//     if !text.is_empty() {
-//         let text_x = x + w / 2.0;
-//         let text_y = y + h / 2.0;
-//
-//         writeln!(
-//             file,
-//             r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle">{text}</text>"#
-//         )?;
-//     }
-//
-//     writeln!(file, "</g>")?;
-//
-//     Ok(())
-// }
 
 fn lighten_color(rgb: Srgb, amount: f32) -> Srgb {
     // Convert RGB to HSV

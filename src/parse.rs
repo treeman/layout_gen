@@ -140,6 +140,12 @@ impl Layer {
             keys,
         })
     }
+
+    pub fn replace_key_id(&mut self, key_id: &str, replacement: &str) {
+        if let Some(key) = self.keys.iter_mut().find(|key| key.id.0 == key_id) {
+            key.id = KeyId(replacement.to_owned())
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -168,15 +174,16 @@ pub struct LayerDef {
 
 #[derive(Debug, Clone)]
 pub struct Combo {
+    pub id: String,
     pub output: String,
     pub keys: Vec<Key>,
 }
 
 impl Combo {
-    pub fn new(output: String, mut keys: Vec<Key>) -> Self {
+    pub fn new(id: String, output: String, mut keys: Vec<Key>) -> Self {
         // Make sure that keys are sorted in matrix position
         keys.sort_by_key(|k| (k.matrix_pos.x, k.matrix_pos.y));
-        Combo { output, keys }
+        Combo { id, output, keys }
     }
 
     pub fn is_horizontal_neighbour(&self) -> bool {
@@ -294,6 +301,7 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
     for line in src.lines() {
         if let Some(spec) = SPEC.captures(line) {
             let args: Vec<_> = spec[2].split(",").map(|x| x.trim()).collect();
+            let id = args[0].to_string();
             let output_s = args[1].to_string();
             let output = match &spec[1] {
                 "SUBS" => match QUOTES.captures(&output_s) {
@@ -308,7 +316,7 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
                 .iter()
                 .map(|x| key_lookup.get(*x).unwrap().clone())
                 .collect();
-            res.push(Combo::new(output, keys));
+            res.push(Combo::new(id, output, keys));
         }
     }
     Ok(res)
