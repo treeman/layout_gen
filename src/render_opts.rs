@@ -13,6 +13,7 @@ pub struct RenderOpts {
     pub legend: Vec<LegendSpec>,
     pub colors: HashMap<String, String>,
     pub matrix: MatrixSpec,
+    pub combos: CombosSpec,
 }
 
 impl RenderOpts {
@@ -52,6 +53,7 @@ impl RenderOpts {
             legend: spec.legend,
             colors: spec.colors,
             matrix: spec.matrix,
+            combos: spec.combos,
         }
     }
 
@@ -145,6 +147,8 @@ fn key_id_to_title(id: &str) -> String {
         "SE_ODIA" => "Ö",
         "SE_ACUT" => "´",
         "SE_DIAE" => "¨",
+        "SE_EQL" => "=",
+        "SE_DLR" => "$",
         "KC_UP" => "↑",
         "KC_DOWN" => "↓",
         "KC_LEFT" => "←",
@@ -153,6 +157,10 @@ fn key_id_to_title(id: &str) -> String {
         "KC_END" => "End",
         "KC_PGUP" => "PgUp",
         "KC_PGDN" => "PgDn",
+        "KC_BSPC" => "Bspc",
+        "KC_DEL" => "Del",
+        "KC_LSFT" => "Shift",
+        "KC_RSFT" => "Shift",
         _ => id,
     };
     res.to_string()
@@ -183,6 +191,7 @@ struct RenderSpec {
     legend: Vec<LegendSpec>,
     colors: HashMap<String, String>,
     matrix: MatrixSpec,
+    combos: CombosSpec,
 }
 
 type LayersSpec = HashMap<String, LayerSpec>;
@@ -219,6 +228,12 @@ pub struct MatrixPos {
     pub x: usize,
     pub y: usize,
     pub half: MatrixHalf,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
+pub struct CombosSpec {
+    pub background_layer_class: String,
+    pub keys_with_separate_imgs: Vec<String>,
 }
 
 impl MatrixSpec {

@@ -103,7 +103,7 @@
         "class": "mod1"
       },
       {
-        "keys": ["OS_SHFT"],
+        "keys": ["OS_SHFT", "KC_LSFT", "KC_RSFT"],
         "title": "Shift",
         "class": "mod1"
       },
@@ -132,7 +132,7 @@
       },
       {
         "keys": ["KC_BTN3"],
-        "title": "Middle\nMouse"
+        "title": "Middle Mouse"
       },
       {
         "keys": ["KC_BTN4"],
@@ -141,6 +141,38 @@
       {
         "keys": ["KC_BTN5"],
         "title": "Fwd\nMouse"
+      },
+      {
+        "keys": ["CLEAR"],
+        "title": "Clear",
+        "class": "management"
+      },
+      {
+        "keys": ["ESC_SYM"],
+        "title": "Esc SYM",
+        "class": "layer_down"
+      },
+      {
+        "keys": ["COLN_SYM"],
+        "title": ": SYM",
+        "class": "layer_down"
+      },
+      {
+        "keys": ["\"#{}\"SS_TAP(X_LEFT)"],
+        "title": "#{}"
+      },
+      {
+        "keys": ["REV_REP"],
+        "title": "Rev Rep",
+        "class": "special"
+      },
+      {
+        "keys": ["VIM_SP"],
+        "title": "hsplit"
+      },
+      {
+        "keys": ["VIM_VS"],
+        "title": "vsplit"
       }
     ],
     "_MOUSE": [
@@ -385,6 +417,10 @@
         "class": "management"
       }
     ]
+  },
+  "combos": {
+    "background_layer_class": "combo_background",
+    "keys_with_separate_imgs": ["SE_E", "MT_SPC", "FUN"]
   },
   "colors": {
     "blank": "#e9e1db",

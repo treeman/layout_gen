@@ -166,15 +166,9 @@ pub struct LayerDef {
     pub keys: Vec<KeyId>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ComboOutput {
-    Key(KeyId),
-    String(String),
-}
-
 #[derive(Debug, Clone)]
 pub struct Combo {
-    pub output: ComboOutput,
+    pub output: String,
     pub keys: Vec<Key>,
 }
 
@@ -212,8 +206,6 @@ pub struct Keyboard {}
 #[derive(Deserialize, Debug)]
 pub struct KeyboardSpec {
     layouts: HashMap<String, LayoutSpec>,
-    matrix_pins: MatrixPins,
-    split: SplitSpec,
 }
 
 #[derive(Deserialize, Debug)]
@@ -226,23 +218,6 @@ pub struct KeySpec {
     x: f32,
     y: f32,
     // TODO r
-}
-
-#[derive(Deserialize, Debug)]
-pub struct MatrixPins {
-    rows: Vec<String>,
-    cols: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct SplitSpec {
-    matrix_pins: RightMatrixPins,
-    enabled: bool,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct RightMatrixPins {
-    right: MatrixPins,
 }
 
 fn parse_layers_from_source(src: &str) -> Result<Vec<LayerDef>> {
@@ -293,15 +268,20 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
 
     static SPEC: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^\s*(COMB|SUBS)\((.+)\)\s*$").unwrap());
+    static QUOTES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"^"([^"]+)"$"#).unwrap());
 
     let mut res = Vec::new();
     for line in src.lines() {
         if let Some(spec) = SPEC.captures(line) {
             let args: Vec<_> = spec[2].split(",").map(|x| x.trim()).collect();
             let output_s = args[1].to_string();
+            dbg!(&output_s);
             let output = match &spec[1] {
-                "SUBS" => ComboOutput::String(output_s[1..output_s.len() - 1].to_string()),
-                "COMB" => ComboOutput::Key(KeyId(output_s)),
+                "SUBS" => match QUOTES.captures(&output_s) {
+                    Some(x) => x[1].to_string(),
+                    None => output_s,
+                },
+                "COMB" => output_s,
                 _ => panic!("No SUBS or COMB in regex match {}", &spec[1]),
             };
 
@@ -387,24 +367,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
                 { "matrix": [7, 0], "x": 6.5, "y": 4 }
             ]
         }
-    },
-    "matrix_pins": {
-        "rows": ["GP26", "GP27", "GP22", "GP20"],
-        "cols": ["GP3", "GP4", "GP5", "GP6", "GP7"]
-    },
-    "split": {
-        "enabled": true,
-        "matrix_pins": {
-            "right": {
-                "rows": ["GP27", "GP26", "GP22", "GP20"],
-                "cols": ["GP3", "GP4", "GP5", "GP6", "GP7"]
-            }
-        }
     }
 }
         "#;
 
-        let combos_def = r#"
+        let combos_def = r##"
 // Comment
 COMB(num,               NUMWORD,        MT_SPC, SE_E)
 
@@ -413,7 +380,9 @@ COMB(comb_boot_r,       QK_BOOT,        SE_E, SE_L, SE_LPRN, SE_RPRN, SE_UNDS)
 
 COMB(escape_sym,        ESC_SYM,        SE_T, SE_H)
 SUBS(lt_eq,             "<=",           SE_F, SE_H)
-        "#;
+
+SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
+        "##;
 
         let render_input = r#"
 {
@@ -442,10 +411,7 @@ SUBS(lt_eq,             "<=",           SE_F, SE_H)
         assert_eq!(keymap.layers[1].keys[1].id.0, "SE_PLUS");
 
         assert_eq!(keymap.combos.len(), 5);
-        assert_eq!(
-            keymap.combos[0].output,
-            ComboOutput::Key(KeyId("NUMWORD".into()))
-        );
+        assert_eq!(keymap.combos[0].output, "NUMWORD");
         assert_eq!(keymap.combos[0].keys[0].id.0, "MT_SPC");
         assert_eq!(keymap.combos[0].keys[1].id.0, "SE_E");
         assert_eq!(
@@ -470,6 +436,8 @@ SUBS(lt_eq,             "<=",           SE_F, SE_H)
         assert!(!keymap.combos[3].is_vertical_neighbour());
         assert!(!keymap.combos[4].is_horizontal_neighbour());
         assert!(keymap.combos[4].is_vertical_neighbour());
+
+        assert_eq!(keymap.combos[5].output, "\"#{}\"SS_TAP(X_LEFT)");
 
         Ok(())
     }
