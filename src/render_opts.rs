@@ -3,6 +3,7 @@ use eyre::Result;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::sync::LazyLock;
 
@@ -159,6 +160,7 @@ fn key_id_to_title(id: &str) -> String {
         "KC_PGDN" => "PgDn",
         "KC_BSPC" => "Bspc",
         "KC_DEL" => "Del",
+        "KC_ENT" => "Enter",
         "KC_LSFT" => "Shift",
         "KC_RSFT" => "Shift",
         _ => id,
@@ -233,7 +235,7 @@ pub struct MatrixPos {
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
 pub struct CombosSpec {
     pub background_layer_class: String,
-    pub keys_with_separate_imgs: Vec<String>,
+    pub keys_with_separate_imgs: HashSet<String>,
 }
 
 impl MatrixSpec {

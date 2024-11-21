@@ -7,6 +7,7 @@ use camino::Utf8Path;
 use eyre::Result;
 use palette::Mix;
 use palette::{Hsv, IntoColor, Srgb};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::str::FromStr;
@@ -194,157 +195,313 @@ fn render_combos(
     render_opts: &RenderOpts,
     output_dir: &Utf8Path,
 ) -> Result<()> {
-    let mut horizontal_combos = Vec::new();
-    let mut vertical_combos = Vec::new();
+    let mut mid_triple_combos = Vec::new();
+    // let mut horizontal_combos = Vec::new();
+    let mut neighbour_combos = Vec::new();
+    // let mut vertical_combos = Vec::new();
 
-    // TODO don't hardcode these
-    let mut e_combos = Vec::new();
-    let mut spc_combos = Vec::new();
-    let mut fun_combos = Vec::new();
+    let mut combos_with_separate_layouts = HashMap::new();
 
     let mut other_combos = Vec::new();
 
     for combo in combos {
-        if combo.contains_input_key("SE_E") && combo.keys.len() == 2 {
-            e_combos.push(combo);
-        } else if combo.contains_input_key("MT_SPC") && combo.keys.len() == 2 {
-            spc_combos.push(combo);
-        } else if combo.contains_input_key("FUN") && combo.keys.len() == 2 {
-            fun_combos.push(combo);
-        } else if combo.is_horizontal_neighbour() {
-            horizontal_combos.push(combo);
-        } else if combo.is_vertical_neighbour() {
-            vertical_combos.push(combo);
-            // FIXME can be both E and SPC
-        } else {
-            other_combos.push(combo);
+        let mut handled = false;
+
+        // A combo can be contained in several of the separate layouts
+        for key in &combo.keys {
+            let id = &key.id.0;
+            if combo.keys.len() == 2 && render_opts.combos.keys_with_separate_imgs.contains(id) {
+                combos_with_separate_layouts
+                    .entry(id)
+                    .and_modify(|key_combos: &mut Vec<&Combo>| key_combos.push(combo))
+                    .or_insert_with(|| vec![combo]);
+                handled = true;
+            }
+        }
+
+        if !handled {
+            if combo.is_mid_triple() {
+                mid_triple_combos.push(combo);
+            } else if combo.is_horizontal_neighbour() || combo.is_vertical_neighbour() {
+                neighbour_combos.push(combo);
+            } else {
+                other_combos.push(combo);
+            }
         }
     }
 
-    println!(
-        "hor: {} ver: {} e: {} spc: {} fun: {} other: {}",
-        horizontal_combos.len(),
-        vertical_combos.len(),
-        e_combos.len(),
-        spc_combos.len(),
-        fun_combos.len(),
-        other_combos.len()
-    );
+    // dbg!(&combos_with_separate_layouts);
 
-    for combo in other_combos {
-        for x in &combo.keys {
-            print!(" {}", x.id.0);
-        }
-        println!();
+    println!("Neighbours: {}", neighbour_combos.len());
+    // println!("Ver: {}", vertical_combos.len());
+    println!("Triple: {}", mid_triple_combos.len());
+    for (key, combos) in combos_with_separate_layouts {
+        println!("{}: {}", key, combos.len());
     }
+    println!("Other: {}", other_combos.len());
+    println!("Total: {}", combos.len());
 
-    render_neighbour_combos(
-        &horizontal_combos,
-        &vertical_combos,
+    // for combo in other_combos {
+    //     for x in &combo.keys {
+    //         print!(" {}", x.id.0);
+    //     }
+    //     println!();
+    // }
+
+    CombosWithLayerRender {
+        combos: &neighbour_combos,
         base_layer,
         render_opts,
-        output_dir,
-    )?;
+        path: &output_dir.join("neighbour_combos.svg"),
+    }
+    .render()?;
+
+    CombosWithLayerRender {
+        combos: &mid_triple_combos,
+        base_layer,
+        render_opts,
+        path: &output_dir.join("mid_triple_combos.svg"),
+    }
+    .render()?;
+
+    // for () in combos_with_separate_layouts {
+    //
+    // }
 
     Ok(())
 }
 
-fn render_neighbour_combos(
-    horizontal_combos: &[&Combo],
-    vertical_combos: &[&Combo],
-    base_layer: &Layer,
-    render_opts: &RenderOpts,
-    output_dir: &Utf8Path,
-) -> Result<()> {
-    let path = output_dir.join("neighbour_combos.svg");
-    let mut file = File::create(path)?;
+struct CombosWithLayerRender<'a> {
+    combos: &'a [&'a Combo],
+    base_layer: &'a Layer,
+    render_opts: &'a RenderOpts,
+    path: &'a Utf8Path,
+}
 
-    let key_w = 54.0;
-    let keymap_border = 10.0;
+impl<'a> CombosWithLayerRender<'a> {
+    fn render(&self) -> Result<()> {
+        let mut file = File::create(self.path)?;
 
-    let mut max_x: f32 = 0.0;
-    let mut max_y: f32 = 0.0;
-    for key in base_layer.keys.iter() {
-        max_x = max_x.max((1.0 + key.x) * key_w);
-        max_y = max_y.max((1.0 + key.y) * key_w);
-    }
-    max_x += keymap_border * 2.0;
-    max_y += keymap_border * 2.0;
+        let key_w = 54.0;
+        let keymap_border = 10.0;
 
-    writeln!(
-        file,
-        r#"<svg width='{max_x}px'
+        let combo_key_h = 16.0;
+        let combo_char_w = 5.0;
+
+        let border_x = 1.5;
+        let border_top = 1.0;
+        let border_bottom = 2.5;
+
+        let text_padding = 10.0;
+        let combo_text_h = 8.0;
+
+        let mut max_x: f32 = 0.0;
+        let mut max_y: f32 = 0.0;
+        for key in self.base_layer.keys.iter() {
+            max_x = max_x.max((1.0 + key.x) * key_w);
+            max_y = max_y.max((1.0 + key.y) * key_w);
+        }
+        max_x += keymap_border * 2.0;
+        max_y += keymap_border * 2.0;
+
+        writeln!(
+            file,
+            r#"<svg width='{max_x}px'
        height='{max_y}x'
        viewBox='0 0 {max_x} {max_y}'
        xmlns='http://www.w3.org/2000/svg'
        xmlns:xlink="http://www.w3.org/1999/xlink">
 "#
-    )?;
+        )?;
 
-    let key_text_h = 11.0;
-    let key_subtext_h = 9.0;
-    let combo_text_h = 8.0;
-
-    writeln!(
-        file,
-        r#" <style type='text/css'>
+        writeln!(
+            file,
+            r#" <style type='text/css'>
     .keycap .border {{ stroke: black; stroke-width: 1; }}
     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
     .keycap {{ font-family: sans-serif; font-size: 11px}}
     .combos .keycap {{ font-size: {combo_text_h}px}}
   </style>
 "#
-    )?;
+        )?;
 
-    write_layer_keys(
-        &mut file,
-        base_layer,
-        render_opts,
-        keymap_border,
-        key_w,
-        Some(&render_opts.combos.background_layer_class),
-    )?;
+        write_layer_keys(
+            &mut file,
+            self.base_layer,
+            self.render_opts,
+            keymap_border,
+            key_w,
+            Some(&self.render_opts.combos.background_layer_class),
+        )?;
 
-    let fallback_color = "#e5c494".to_string();
-    writeln!(file, r#"<g class="combos">"#)?;
+        let fallback_color = "#e5c494".to_string();
+        writeln!(file, r#"<g class="combos">"#)?;
+        for combo in self.combos {
+            let output_opts = self.render_opts.get(&self.base_layer.id.0, &combo.output);
 
-    let combo_key_h = 16.0;
-    let combo_char_w = 5.0;
+            let title = &output_opts.title;
+            let class = &output_opts.class;
+            let outer_color = self
+                .render_opts
+                .colors
+                .get(class)
+                .unwrap_or(&fallback_color);
 
-    let border_x = 1.5;
-    let border_top = 1.0;
-    let border_bottom = 2.5;
+            // ComboRender {
+            //     x,
+            //     y,
+            //     w,
+            //     combo,
+            //     title,
+            //     class,
+            //     outer_color,
+            //     min_w: 80.0,
+            // }
+            // .render(&mut file)?;
 
-    let text_padding = 10.0;
-    let calc_w = |title: &str| {
-        let calc = title.chars().count() as f32 * combo_char_w + text_padding;
-        calc.max(28.0)
-    };
+            if combo.is_vertical_neighbour() {
+                let calc_w = |title: &str| {
+                    let calc = title.chars().count() as f32 * combo_char_w + text_padding;
+                    calc.max(28.0)
+                };
+                let w = calc_w(title);
 
-    for combo in vertical_combos {
-        let output_opts = render_opts.get(&base_layer.id.0, &combo.output);
+                let a = &combo.keys[0];
+                let b = &combo.keys[1];
 
-        let title = &output_opts.title;
-        let w = calc_w(title);
+                let x = keymap_border + a.x * key_w + key_w / 2.0 - w / 2.0;
+                let y = keymap_border + (1.0 + a.y.min(b.y)) * key_w - combo_key_h / 2.0;
 
-        let a = &combo.keys[0];
-        let b = &combo.keys[1];
+                ComboRender {
+                    x,
+                    y,
+                    w,
+                    combo,
+                    title,
+                    class,
+                    outer_color,
+                    min_w: 80.0,
+                }
+                .render(&mut file)?;
+            } else if combo.is_horizontal_neighbour() {
+                let calc_w = |title: &str| {
+                    let calc = title.chars().count() as f32 * combo_char_w + text_padding;
+                    calc.max(28.0)
+                };
+                let w = calc_w(title);
 
-        let x = keymap_border + a.x * key_w + key_w / 2.0 - w / 2.0;
-        let y = keymap_border + (1.0 + a.y.min(b.y)) * key_w - combo_key_h / 2.0;
+                let a = &combo.keys[0];
+                let b = &combo.keys[1];
 
-        let class = &output_opts.class;
-        let outer_color = render_opts.colors.get(class).unwrap_or(&fallback_color);
+                // The top y that intersects both keys
+                let top_y_edge = a.y.max(b.y) * key_w;
+                // The bottom y that intersects both keys
+                let bottom_y_edge = a.y.min(b.y) * key_w + key_w;
+                // Finds the middle of the intersection.
+                let mid_y = top_y_edge + (bottom_y_edge - top_y_edge) / 2.0;
+                // Offset with border and center the key at middle.
+                let y = keymap_border + mid_y - combo_key_h / 2.0;
+                // Right in the middle of the keys.
+                let x = keymap_border + a.x.max(b.x) * key_w - w / 2.0;
+
+                ComboRender {
+                    x,
+                    y,
+                    w,
+                    combo,
+                    title,
+                    class,
+                    outer_color,
+                    min_w: 80.0,
+                }
+                .render(&mut file)?;
+            } else if combo.is_mid_triple() {
+                let calc_w = |title: &str| {
+                    let calc = title.chars().count() as f32 * combo_char_w + text_padding;
+                    calc.max(80.0)
+                };
+
+                let w = calc_w(title);
+
+                let a = &combo.keys[0];
+                let b = &combo.keys[1];
+                let c = &combo.keys[2];
+
+                // The top y that intersects both keys
+                let top_y_edge = a.y.max(b.y).max(c.y) * key_w;
+                // The bottom y that intersects both keys
+                let bottom_y_edge = a.y.min(b.y).min(c.y) * key_w + key_w;
+                // Finds the middle of the intersection.
+                let mid_y = top_y_edge + (bottom_y_edge - top_y_edge) / 2.0;
+                // Offset with border and center the key at middle.
+                let y = keymap_border + mid_y - combo_key_h / 2.0;
+                // Right in the middle of the keys.
+                let x = keymap_border + (1.5 + a.x) * key_w - w / 2.0;
+
+                ComboRender {
+                    x,
+                    y,
+                    w,
+                    combo,
+                    title,
+                    class,
+                    outer_color,
+                    min_w: 80.0,
+                }
+                .render(&mut file)?;
+            }
+        }
+
+        writeln!(file, r#"</g>"#)?;
+
+        file.write_all("</svg>".as_bytes())?;
+
+        Ok(())
+    }
+}
+
+struct ComboRender<'a> {
+    x: f32,
+    y: f32,
+    w: f32,
+    combo: &'a Combo,
+    title: &'a str,
+    class: &'a str,
+    outer_color: &'a str,
+    min_w: f32,
+}
+
+impl<'a> ComboRender<'a> {
+    fn render(&self, file: &mut File) -> Result<()> {
+        // let key_w = 54.0;
+        // let keymap_border = 10.0;
+
+        let combo_key_h = 16.0;
+        let combo_char_w = 5.0;
+
+        let border_x = 1.5;
+        let border_top = 1.0;
+        let border_bottom = 2.5;
+
+        let text_padding = 10.0;
+        let combo_text_h = 8.0;
+
+        let calc_w = |title: &str| {
+            let calc = title.chars().count() as f32 * combo_char_w + text_padding;
+            calc.max(self.min_w)
+        };
+
+        let w = calc_w(self.title);
 
         KeyRender {
-            x,
-            y,
-            w,
+            x: self.x,
+            y: self.y,
+            w: self.w,
             h: combo_key_h,
             rx: 4.0,
-            class,
-            outer_color,
-            title,
+            class: self.class,
+            outer_color: self.outer_color,
+            title: self.title,
             hold_title: None,
             border_left: border_x,
             border_right: border_x,
@@ -352,54 +509,9 @@ fn render_neighbour_combos(
             border_bottom,
             text_h: combo_text_h,
         }
-        .render(&mut file)?;
+        .render(file)?;
+        Ok(())
     }
-    for combo in horizontal_combos {
-        let output_opts = render_opts.get(&base_layer.id.0, &combo.output);
-
-        let title = &output_opts.title;
-        let w = calc_w(title);
-
-        let a = &combo.keys[0];
-        let b = &combo.keys[1];
-
-        // The top y that intersects both keys
-        let top_y_edge = a.y.max(b.y) * key_w;
-        // The bottom y that intersects both keys
-        let bottom_y_edge = a.y.min(b.y) * key_w + key_w;
-        // Finds the middle of the intersection.
-        let mid_y = top_y_edge + (bottom_y_edge - top_y_edge) / 2.0;
-        // Offset with border and center the key at middle.
-        let y = keymap_border + mid_y - combo_key_h / 2.0;
-        // Right in the middle of the keys.
-        let x = keymap_border + a.x.max(b.x) * key_w - w / 2.0;
-
-        let class = &output_opts.class;
-        let outer_color = render_opts.colors.get(class).unwrap_or(&fallback_color);
-
-        KeyRender {
-            x,
-            y,
-            w,
-            h: combo_key_h,
-            rx: 4.0,
-            class,
-            outer_color,
-            title,
-            hold_title: None,
-            border_left: border_x,
-            border_right: border_x,
-            border_top,
-            border_bottom,
-            text_h: combo_text_h,
-        }
-        .render(&mut file)?;
-    }
-    writeln!(file, r#"</g>"#)?;
-
-    file.write_all("</svg>".as_bytes())?;
-
-    Ok(())
 }
 
 struct KeyRender<'a> {

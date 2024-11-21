@@ -173,6 +173,12 @@ pub struct Combo {
 }
 
 impl Combo {
+    pub fn new(output: String, mut keys: Vec<Key>) -> Self {
+        // Make sure that keys are sorted in matrix position
+        keys.sort_by_key(|k| (k.matrix_pos.x, k.matrix_pos.y));
+        Combo { output, keys }
+    }
+
     pub fn is_horizontal_neighbour(&self) -> bool {
         if self.keys.len() != 2 {
             return false;
@@ -193,6 +199,20 @@ impl Combo {
 
         a.matrix_pos.x == b.matrix_pos.x
             && (a.matrix_pos.y as i32 - b.matrix_pos.y as i32).abs() == 1
+    }
+
+    pub fn is_mid_triple(&self) -> bool {
+        if self.keys.len() != 3 {
+            return false;
+        }
+        let a = &self.keys[0];
+        let b = &self.keys[1];
+        let c = &self.keys[2];
+
+        a.matrix_pos.y == b.matrix_pos.y
+            && b.matrix_pos.y == c.matrix_pos.y
+            && c.matrix_pos.x - b.matrix_pos.x == 1
+            && b.matrix_pos.x - a.matrix_pos.x == 1
     }
 
     pub fn contains_input_key(&self, input: &str) -> bool {
@@ -275,7 +295,6 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
         if let Some(spec) = SPEC.captures(line) {
             let args: Vec<_> = spec[2].split(",").map(|x| x.trim()).collect();
             let output_s = args[1].to_string();
-            dbg!(&output_s);
             let output = match &spec[1] {
                 "SUBS" => match QUOTES.captures(&output_s) {
                     Some(x) => x[1].to_string(),
@@ -289,7 +308,7 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
                 .iter()
                 .map(|x| key_lookup.get(*x).unwrap().clone())
                 .collect();
-            res.push(Combo { output, keys });
+            res.push(Combo::new(output, keys));
         }
     }
     Ok(res)

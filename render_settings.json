@@ -103,9 +103,14 @@
         "class": "mod1"
       },
       {
-        "keys": ["OS_SHFT", "KC_LSFT", "KC_RSFT"],
+        "keys": ["OS_SHFT"],
         "title": "Shift",
         "class": "mod1"
+      },
+      {
+        "keys": ["KC_LSFT", "KC_RSFT"],
+        "title": "Shift",
+        "class": "mod_down"
       },
       {
         "keys": ["OS_ALT"],
@@ -165,6 +170,25 @@
         "keys": ["REV_REP"],
         "title": "Rev Rep",
         "class": "special"
+      },
+      {
+        "keys": ["C(SE_W)"],
+        "title": "Ctrl W",
+        "class": "mod_implicit"
+      },
+      {
+        "keys": ["TAB_MOD"],
+        "title": "Tab MOD",
+        "class": "layer_down"
+      },
+      {
+        "keys": ["CLOSE_WIN"],
+        "title": "Close Window"
+      },
+      {
+        "keys": ["TG_SWE"],
+        "title": "SWE",
+        "class": "layer_toggle"
       },
       {
         "keys": ["VIM_SP"],
