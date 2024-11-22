@@ -186,6 +186,38 @@ impl Combo {
         Combo { id, output, keys }
     }
 
+    pub fn min_x(&self) -> f32 {
+        self.keys
+            .iter()
+            .min_by(|a, b| a.x.partial_cmp(&b.x).unwrap())
+            .unwrap()
+            .x
+    }
+
+    pub fn max_x(&self) -> f32 {
+        self.keys
+            .iter()
+            .max_by(|a, b| a.x.partial_cmp(&b.x).unwrap())
+            .unwrap()
+            .x
+    }
+
+    pub fn min_y(&self) -> f32 {
+        self.keys
+            .iter()
+            .min_by(|a, b| a.y.partial_cmp(&b.y).unwrap())
+            .unwrap()
+            .y
+    }
+
+    pub fn max_y(&self) -> f32 {
+        self.keys
+            .iter()
+            .max_by(|a, b| a.y.partial_cmp(&b.y).unwrap())
+            .unwrap()
+            .y
+    }
+
     pub fn is_horizontal_neighbour(&self) -> bool {
         if self.keys.len() != 2 {
             return false;

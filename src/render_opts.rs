@@ -150,6 +150,9 @@ fn key_id_to_title(id: &str) -> String {
         "SE_DIAE" => "¨",
         "SE_EQL" => "=",
         "SE_DLR" => "$",
+        "SE_QUOT" => "'",
+        "SE_DQUO" => "\"",
+        "SE_SCLN" => ";",
         "KC_UP" => "↑",
         "KC_DOWN" => "↓",
         "KC_LEFT" => "←",
@@ -237,6 +240,8 @@ pub struct CombosSpec {
     pub background_layer_class: String,
     pub keys_with_separate_imgs: HashSet<String>,
     pub active_class_in_separate_layer: String,
+    pub highlight_groups: HashMap<String, HashSet<String>>,
+    pub single_img: HashSet<String>,
 }
 
 impl MatrixSpec {

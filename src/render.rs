@@ -1,11 +1,10 @@
 use crate::parse::Combo;
-use crate::parse::Key;
 use crate::parse::Keymap;
 use crate::parse::Layer;
+use crate::render_opts::MatrixHalf;
 use crate::render_opts::RenderOpts;
 use camino::Utf8Path;
 use eyre::Result;
-use palette::Mix;
 use palette::{Hsv, IntoColor, Srgb};
 use std::collections::HashMap;
 use std::fs::File;
@@ -13,7 +12,7 @@ use std::io::Write;
 use std::str::FromStr;
 
 // TODO
-// - Generate combos
+// - REFACTOR
 // - Add wrapping class specifying keyboard/keymap name
 
 pub fn render(keymap: &Keymap, render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
@@ -31,7 +30,7 @@ pub fn render(keymap: &Keymap, render_opts: &RenderOpts, output_dir: &Utf8Path) 
 
 fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
     let path = output_dir.join("legend.svg");
-    let mut file = File::create(path)?;
+    let mut file = File::create(&path)?;
 
     let keymap_border = 10.0;
     let key_side = 54.0;
@@ -40,7 +39,7 @@ fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> 
 
     let item_count = render_opts.legend.len();
     let columns = std::cmp::min(item_count, 4);
-    let rows = item_count / columns;
+    let rows = (item_count as f32 / columns as f32).ceil();
 
     let max_x = columns as f32 * key_w + keymap_border * 2.0;
     let max_y = rows as f32 * key_h + keymap_border * 2.0;
@@ -76,7 +75,7 @@ fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> 
         let x = keymap_border + col as f32 * key_w;
         let y = keymap_border + row as f32 * key_h;
 
-        let outer_color = render_opts
+        let inner_color = render_opts
             .colors
             .get(&item.class)
             .unwrap_or(&fallback_color);
@@ -88,7 +87,7 @@ fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> 
             h: key_h,
             rx: 5.0,
             class,
-            outer_color,
+            inner_color,
             title: txt,
             hold_title: None,
             border_left: 6.0,
@@ -102,12 +101,14 @@ fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> 
 
     file.write_all("</svg>".as_bytes())?;
 
+    println!("{}", path);
+
     Ok(())
 }
 
 fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
     let path = output_dir.join(format!("{}.svg", layer.id.0));
-    let mut file = File::create(path)?;
+    let mut file = File::create(&path)?;
 
     let key_w = 54.0;
     let keymap_border = 10.0;
@@ -155,6 +156,8 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
 
     file.write_all("</svg>".as_bytes())?;
 
+    println!("{}", path);
+
     Ok(())
 }
 
@@ -185,7 +188,7 @@ fn write_layer_keys(
                 class = x;
             }
         }
-        let outer_color = render_opts.colors.get(class).unwrap_or(&fallback_color);
+        let inner_color = render_opts.colors.get(class).unwrap_or(&fallback_color);
 
         let x = keymap_border + key.x * key_w;
         let y = keymap_border + key.y * key_w;
@@ -205,7 +208,7 @@ fn write_layer_keys(
             h,
             rx: 5.0,
             class,
-            outer_color,
+            inner_color,
             title,
             hold_title,
             border_left: 6.0,
@@ -228,6 +231,7 @@ fn render_combos(
     let mut mid_triple_combos = Vec::new();
     let mut neighbour_combos = Vec::new();
     let mut combos_with_separate_layouts = HashMap::new();
+    let mut highlight_groups = HashMap::new();
     let mut other_combos = Vec::new();
 
     for combo in combos {
@@ -245,6 +249,21 @@ fn render_combos(
             }
         }
 
+        if render_opts.combos.single_img.contains(&combo.id) {
+            other_combos.push(combo);
+            handled = true;
+        }
+
+        for (group_id, combo_ids) in &render_opts.combos.highlight_groups {
+            if combo_ids.contains(&combo.id) {
+                highlight_groups
+                    .entry(group_id)
+                    .and_modify(|key_combos: &mut Vec<&Combo>| key_combos.push(combo))
+                    .or_insert_with(|| vec![combo]);
+                handled = true;
+            }
+        }
+
         if !handled {
             if combo.is_mid_triple() {
                 mid_triple_combos.push(combo);
@@ -256,6 +275,7 @@ fn render_combos(
         }
     }
 
+    println!("Neighbours: {}", neighbour_combos.len());
     CombosWithLayerRender {
         combos: &neighbour_combos,
         base_layer,
@@ -264,6 +284,7 @@ fn render_combos(
     }
     .render()?;
 
+    println!("Triple: {}", mid_triple_combos.len());
     CombosWithLayerRender {
         combos: &mid_triple_combos,
         base_layer,
@@ -273,6 +294,7 @@ fn render_combos(
     .render()?;
 
     for (active_key, combos) in &combos_with_separate_layouts {
+        println!("{}: {}", active_key, combos.len());
         ComboSeparateLayerRender {
             active_key,
             combos,
@@ -283,6 +305,18 @@ fn render_combos(
         .render()?;
     }
 
+    println!("Groups: {}", highlight_groups.len());
+    for (group_id, combos) in &highlight_groups {
+        ComboGroupRender {
+            combos,
+            base_layer,
+            render_opts,
+            path: &output_dir.join(format!("{}.svg", group_id)),
+        }
+        .render()?;
+    }
+
+    println!("Other: {}", other_combos.len());
     for combo in &other_combos {
         ComboSingleRender {
             combo,
@@ -293,12 +327,6 @@ fn render_combos(
         .render()?;
     }
 
-    println!("Neighbours: {}", neighbour_combos.len());
-    println!("Triple: {}", mid_triple_combos.len());
-    for (key, combos) in &combos_with_separate_layouts {
-        println!("{}: {}", key, combos.len());
-    }
-    println!("Other: {}", other_combos.len());
     println!("Total: {}", combos.len());
 
     Ok(())
@@ -367,7 +395,7 @@ impl<'a> CombosWithLayerRender<'a> {
 
             let title = &output_opts.title;
             let class = &output_opts.class;
-            let outer_color = self
+            let inner_color = self
                 .render_opts
                 .colors
                 .get(class)
@@ -377,7 +405,7 @@ impl<'a> CombosWithLayerRender<'a> {
                 combo,
                 title,
                 class,
-                outer_color,
+                inner_color,
                 keymap_border,
             }
             .render(&mut file)?;
@@ -387,6 +415,8 @@ impl<'a> CombosWithLayerRender<'a> {
 
         file.write_all("</svg>".as_bytes())?;
 
+        println!("{}", self.path);
+
         Ok(())
     }
 }
@@ -395,38 +425,11 @@ struct ComboRender<'a> {
     combo: &'a Combo,
     title: &'a str,
     class: &'a str,
-    outer_color: &'a str,
+    inner_color: &'a str,
     keymap_border: f32,
 }
 
 impl<'a> ComboRender<'a> {
-    fn render_key(&self, x: f32, y: f32, w: f32, h: f32, file: &mut File) -> Result<()> {
-        let border_x = 1.5;
-        let border_top = 1.0;
-        let border_bottom = 2.5;
-
-        let combo_text_h = 8.0;
-
-        KeyRender {
-            x,
-            y,
-            w,
-            h,
-            rx: 4.0,
-            class: self.class,
-            outer_color: self.outer_color,
-            title: self.title,
-            hold_title: None,
-            border_left: border_x,
-            border_right: border_x,
-            border_top,
-            border_bottom,
-            text_h: combo_text_h,
-        }
-        .render(file)?;
-        Ok(())
-    }
-
     fn render(&self, file: &mut File) -> Result<()> {
         let key_w = 54.0;
         let combo_char_w = 5.0;
@@ -486,6 +489,33 @@ impl<'a> ComboRender<'a> {
 
             self.render_key(x, y, w, combo_key_h, file)?;
         }
+        Ok(())
+    }
+
+    fn render_key(&self, x: f32, y: f32, w: f32, h: f32, file: &mut File) -> Result<()> {
+        let border_x = 1.5;
+        let border_top = 1.0;
+        let border_bottom = 2.5;
+
+        let combo_text_h = 8.0;
+
+        KeyRender {
+            x,
+            y,
+            w,
+            h,
+            rx: 4.0,
+            class: self.class,
+            inner_color: self.inner_color,
+            title: self.title,
+            hold_title: None,
+            border_left: border_x,
+            border_right: border_x,
+            border_top,
+            border_bottom,
+            text_h: combo_text_h,
+        }
+        .render(file)?;
         Ok(())
     }
 }
@@ -573,25 +603,28 @@ impl<'a> ComboSeparateLayerRender<'a> {
 
         writeln!(file, r"</svg>")?;
 
+        println!("{}", self.path);
+
         Ok(())
     }
 }
 
-struct ComboSingleRender<'a> {
-    combo: &'a Combo,
+struct ComboGroupRender<'a> {
+    combos: &'a [&'a Combo],
     base_layer: &'a Layer,
     render_opts: &'a RenderOpts,
     path: &'a Utf8Path,
 }
 
-impl<'a> ComboSingleRender<'a> {
+impl<'a> ComboGroupRender<'a> {
     fn render(&self) -> Result<()> {
         let mut class_overrides = HashMap::new();
-        let output_opts = self
-            .render_opts
-            .get(&self.base_layer.id.0, &self.combo.output);
-        for key in &self.combo.keys {
-            class_overrides.insert(key.id.0.as_str(), output_opts.class.to_string());
+        for combo in self.combos {
+            let output_opts = self.render_opts.get(&self.base_layer.id.0, &combo.output);
+            let class = output_opts.class.to_string();
+            for key in &combo.keys {
+                class_overrides.insert(key.id.0.as_str(), class.clone());
+            }
         }
 
         let mut file = File::create(self.path)?;
@@ -641,19 +674,187 @@ impl<'a> ComboSingleRender<'a> {
             key_w,
             Some(background_layer_class),
             Some(class_overrides),
-            None,
+            Some(background_layer_class),
         )?;
 
-        let text_x = max_x / 2.0;
-        let text_y = 12.0;
-        let text = &self.combo.output;
+        let fallback_color = "#e5c494".to_string();
+        for combo in self.combos {
+            let output_opts = self.render_opts.get(&self.base_layer.id.0, &combo.output);
+            let class = output_opts.class.to_string();
+            let inner_color = self
+                .render_opts
+                .colors
+                .get(&class)
+                .unwrap_or(&fallback_color);
+
+            let border_x = 1.5;
+            let border_top = 1.0;
+            let border_bottom = 2.5;
+            let h = 18.0;
+            let w = if combo.keys.len() == 5 { 160.0 } else { 80.0 };
+            let x = if combo.keys.len() == 5 {
+                let dist = h;
+                if combo.keys[0].matrix_pos.half == MatrixHalf::Left {
+                    (combo.keys[0].x + 1.0) * key_w + dist
+                } else {
+                    combo.keys[4].x * key_w - w
+                }
+            } else {
+                (combo.min_x() + (combo.max_x() - combo.min_x()) / 2.0) * key_w
+            };
+            let y = if (combo.max_x() - combo.min_x()) > 3.0 {
+                (combo.min_y() + (combo.max_y() - combo.min_y()) / 2.0 + 1.0) * key_w - h
+            } else {
+                combo.min_y() * key_w - h * 0.6
+            };
+
+            let title = &output_opts.title.replace("\n", "");
+
+            KeyRender {
+                x,
+                y,
+                w,
+                h,
+                rx: 4.0,
+                class: &class,
+                inner_color,
+                title,
+                hold_title: None,
+                border_left: border_x,
+                border_right: border_x,
+                border_top,
+                border_bottom,
+                text_h: combo_text_h,
+            }
+            .render(&mut file)?;
+        }
+
+        writeln!(file, r"</svg>")?;
+
+        println!("{}", self.path);
+
+        Ok(())
+    }
+}
+
+struct ComboSingleRender<'a> {
+    combo: &'a Combo,
+    base_layer: &'a Layer,
+    render_opts: &'a RenderOpts,
+    path: &'a Utf8Path,
+}
+
+impl<'a> ComboSingleRender<'a> {
+    fn render(&self) -> Result<()> {
+        let mut class_overrides = HashMap::new();
+        let output_opts = self
+            .render_opts
+            .get(&self.base_layer.id.0, &self.combo.output);
+        let class = output_opts.class.to_string();
+        for key in &self.combo.keys {
+            class_overrides.insert(key.id.0.as_str(), class.clone());
+        }
+
+        let mut file = File::create(self.path)?;
+
+        let key_w = 54.0;
+        let keymap_border = 10.0;
+        let combo_text_h = 8.0;
+
+        let mut max_x: f32 = 0.0;
+        let mut max_y: f32 = 0.0;
+        for key in self.base_layer.keys.iter() {
+            max_x = max_x.max((1.0 + key.x) * key_w);
+            max_y = max_y.max((1.0 + key.y) * key_w);
+        }
+        max_x += keymap_border * 2.0;
+        max_y += keymap_border * 2.0;
 
         writeln!(
             file,
-            r#"<text x="{text_x}" y="{text_y}" text-anchor="middle" dominant-baseline="middle" class="combo-output">{text}</text>"#
+            r#"<svg width='{max_x}px'
+       height='{max_y}x'
+       viewBox='0 0 {max_x} {max_y}'
+       xmlns='http://www.w3.org/2000/svg'
+       xmlns:xlink="http://www.w3.org/1999/xlink">
+"#
         )?;
 
+        writeln!(
+            file,
+            r#" <style type='text/css'>
+    .keycap .border {{ stroke: black; stroke-width: 1; }}
+    .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
+    .keycap {{ font-family: sans-serif; font-size: 11px}}
+    .combo-output {{ font-family: sans-serif; font-size: 16px}}
+    .combos .keycap {{ font-size: {combo_text_h}px}}
+  </style>
+"#
+        )?;
+
+        let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
+        dbg!(&background_layer_class);
+
+        write_layer_keys(
+            &mut file,
+            self.base_layer,
+            self.render_opts,
+            keymap_border,
+            key_w,
+            Some(background_layer_class),
+            Some(class_overrides),
+            Some(background_layer_class),
+        )?;
+
+        let fallback_color = "#e5c494".to_string();
+        let inner_color = self
+            .render_opts
+            .colors
+            .get(&class)
+            .unwrap_or(&fallback_color);
+
+        let border_x = 1.5;
+        let border_top = 1.0;
+        let border_bottom = 2.5;
+        let h = 18.0;
+        let w = if self.combo.keys.len() == 5 {
+            120.0
+        } else {
+            80.0
+        };
+        let x = (self.combo.min_x() + (self.combo.max_x() - self.combo.min_x()) / 2.0) * key_w;
+        let y = if self.combo.keys.len() == 4 {
+            // Hacky overrides are the best!
+            (self.combo.keys[0].y + 1.0) * key_w + h * 1.2
+        } else if (self.combo.max_x() - self.combo.min_x()) > 3.0 {
+            (self.combo.min_y() + (self.combo.max_y() - self.combo.min_y()) / 2.0 + 1.0) * key_w - h
+        } else {
+            self.combo.min_y() * key_w - h * 0.6
+        };
+
+        let title = &output_opts.title.replace("\n", "");
+
+        KeyRender {
+            x,
+            y,
+            w,
+            h,
+            rx: 4.0,
+            class: &class,
+            inner_color,
+            title,
+            hold_title: None,
+            border_left: border_x,
+            border_right: border_x,
+            border_top,
+            border_bottom,
+            text_h: combo_text_h,
+        }
+        .render(&mut file)?;
+
         writeln!(file, r"</svg>")?;
+
+        println!("{}", self.path);
 
         Ok(())
     }
@@ -666,7 +867,7 @@ struct KeyRender<'a> {
     h: f32,
     rx: f32,
     class: &'a str,
-    outer_color: &'a str,
+    inner_color: &'a str,
     title: &'a str,
     text_h: f32,
     hold_title: Option<&'a str>,
@@ -689,9 +890,9 @@ impl<'a> KeyRender<'a> {
         let inner_x = outer_x + self.border_left;
         let inner_y = outer_y + self.border_top;
 
-        let outer_color = self.outer_color;
-        let inner_color = lighten_color(Srgb::from_str(outer_color).unwrap().into(), 0.1);
-        let inner_color = format!("#{:x}", Srgb::<u8>::from(inner_color));
+        let inner_color = self.inner_color;
+        let outer_color = lighten_color(Srgb::from_str(inner_color).unwrap().into(), -0.03);
+        let outer_color = format!("#{:x}", Srgb::<u8>::from(outer_color));
 
         let class = self.class;
         let rx = self.rx;

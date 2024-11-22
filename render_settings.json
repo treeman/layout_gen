@@ -17,13 +17,13 @@
       "title": "Modifier (one shot / down)"
     },
     {
-      "class": "management",
-      "title": "Management"
+      "class": "dead_key",
+      "title": "Dead key"
     },
 
     {
-      "class": "active_layer",
-      "title": "Active key for layer"
+      "class": "management",
+      "title": "Management"
     },
     {
       "class": "layer_down",
@@ -34,13 +34,13 @@
       "title": "Modifier (down)"
     },
     {
-      "class": "dead_key",
-      "title": "Dead key"
+      "class": "special",
+      "title": "Special"
     },
 
     {
-      "class": "combo",
-      "title": "Combo"
+      "class": "active_layer",
+      "title": "Active key for layer"
     },
     {
       "class": "layer_toggle",
@@ -49,10 +49,6 @@
     {
       "class": "mod_implicit",
       "title": "Modifier (implicit)"
-    },
-    {
-      "class": "special",
-      "title": "Special"
     }
   ],
   "layers": {
@@ -195,9 +191,33 @@
         "title": "É"
       },
       {
+        "keys": ["CAPSWORD"],
+        "title": "CAPS\nWORD",
+        "class": "layer_toggle"
+      },
+      {
         "keys": ["NUMWORD"],
         "title": "NUM\nWORD",
         "class": "layer_toggle"
+      },
+      {
+        "keys": ["QK_BOOT"],
+        "title": "QMK Boot",
+        "class": "management"
+      },
+      {
+        "keys": ["LEADER"],
+        "title": "Leader Key",
+        "class": "management"
+      },
+      {
+        "keys": ["MY_LALT"],
+        "title": "Alt",
+        "class": "mod1"
+      },
+      {
+        "keys": ["SAVE_VIM"],
+        "title": "Save Vim"
       },
       {
         "keys": ["VIM_SP"],
@@ -454,21 +474,29 @@
   "combos": {
     "background_layer_class": "combo_background",
     "keys_with_separate_imgs": ["SE_E", "MT_SPC", "FUN"],
+    "highlight_groups": {
+      "quotes": ["dquo", "quot"],
+      "smart_layers": ["num", "capsword"],
+      "angled": ["win_alt", "scln"],
+      "split_lower": ["lalt", "leader"],
+      "boot": ["comb_boot_r", "comb_boot_l"]
+    },
+    "single_img": [],
     "active_class_in_separate_layer": "active_layer"
   },
   "colors": {
-    "blank": "#e9e1db",
-    "default": "#c1a78e",
-    "management": "#a98a78",
-    "mod1": "#6e9b72",
-    "mod_down": "#85b695",
-    "mod_implicit": "#739797",
-    "layer1": "#7892bd",
-    "layer_down": "#a3a9ce",
-    "layer_toggle": "#c77b8b",
-    "active_layer": "#d47766",
-    "combo": "#ece1d7",
-    "dead_key": "#e49b5d",
-    "special": "#ebc06d"
+    "blank": "#fff7f1",
+    "combo_background": "#fff7f1",
+    "default": "#ffecc9",
+    "management": "#d0b9a3",
+    "mod1": "#97ce9c",
+    "mod_down": "#afc989",
+    "mod_implicit": "#cebe7a",
+    "layer1": "#9fbff4",
+    "layer_down": "#c8b1eb",
+    "layer_toggle": "#e4a9cc",
+    "active_layer": "#ff9a85",
+    "dead_key": "#f2ae64",
+    "special": "#e8cd62"
   }
 }
