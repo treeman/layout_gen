@@ -346,8 +346,13 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
 
             let keys = args[2..]
                 .iter()
-                .map(|x| key_lookup.get(*x).unwrap().clone())
-                .collect();
+                .map(|x| {
+                    key_lookup
+                        .get(*x)
+                        .cloned()
+                        .ok_or_eyre(format!("Couldn't find combo `{x}` in base layer"))
+                })
+                .collect::<Result<Vec<_>>>()?;
             res.push(Combo::new(id, output, keys));
         }
     }

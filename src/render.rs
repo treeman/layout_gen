@@ -6,7 +6,7 @@ use crate::render_opts::RenderOpts;
 use camino::Utf8Path;
 use eyre::Result;
 use palette::{Hsv, IntoColor, Srgb};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::str::FromStr;
@@ -163,7 +163,6 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
 
 // TODO split out in strut
 // TODO can render svg viewport as well
-// TODO should be able to only render one half of the keyboard
 #[allow(clippy::too_many_arguments)]
 fn write_layer_keys(
     file: &mut File,
@@ -533,9 +532,12 @@ impl<'a> ComboSeparateLayerRender<'a> {
         let mut layer = self.base_layer.clone();
 
         let mut class_overrides = HashMap::new();
+        let mut changed = HashSet::new();
         for combo in self.combos {
             let output_opts = self.render_opts.get(&self.base_layer.id.0, &combo.output);
             for key in &combo.keys {
+                changed.insert((key.matrix_pos.x, key.matrix_pos.y));
+
                 if key.id.0 == self.active_key {
                     continue;
                 }
@@ -544,6 +546,13 @@ impl<'a> ComboSeparateLayerRender<'a> {
                 class_overrides.insert(combo.output.as_str(), output_opts.class.to_string());
             }
         }
+        // This prevents a key with the same output as the combo showing up.
+        for key in layer.keys.iter_mut() {
+            if !changed.contains(&(key.matrix_pos.x, key.matrix_pos.y)) {
+                key.id.0 = "KC_NO".to_string();
+            }
+        }
+
         class_overrides.insert(
             self.active_key,
             self.render_opts
@@ -793,7 +802,6 @@ impl<'a> ComboSingleRender<'a> {
         )?;
 
         let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
-        dbg!(&background_layer_class);
 
         write_layer_keys(
             &mut file,

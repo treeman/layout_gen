@@ -70,7 +70,7 @@
         "class": "special"
       },
       {
-        "keys": ["FUN"],
+        "keys": ["FUN", "SPEC"],
         "class": "layer1"
       },
       {
@@ -81,7 +81,7 @@
       },
       {
         "keys": ["WIN_ALT"],
-        "title": "Win\nAlt",
+        "title": "WIN",
         "class": "layer_down"
       },
       {
@@ -121,7 +121,7 @@
       {
         "keys": ["M_PREC"],
         "title": "Prec",
-        "class": "special"
+        "class": "layer_down"
       },
       {
         "keys": ["KC_BTN1"],
@@ -193,12 +193,12 @@
       {
         "keys": ["CAPSWORD"],
         "title": "CAPS\nWORD",
-        "class": "layer_toggle"
+        "class": "special"
       },
       {
         "keys": ["NUMWORD"],
         "title": "NUM\nWORD",
-        "class": "layer_toggle"
+        "class": "special"
       },
       {
         "keys": ["QK_BOOT"],
@@ -226,15 +226,30 @@
       {
         "keys": ["VIM_VS"],
         "title": "vsplit"
+      },
+      {
+        "keys": ["SWAP_UNDS_MINS"],
+        "class": "special",
+        "title": "Swap _ and -"
+      },
+      {
+        "keys": ["UNDS_MINS"],
+        "title": "_"
+      },
+      {
+        "keys": ["MINS_UNDS"],
+        "title": "-"
       }
     ],
     "_MOUSE": [
       {
         "keys": ["DN_DPI"],
+        "class": "management",
         "title": "Lower\nDPI"
       },
       {
         "keys": ["UP_DPI"],
+        "class": "management",
         "title": "Raise\nDPI"
       },
       {
@@ -256,6 +271,20 @@
         "keys": ["C(SE_X)"],
         "title": "Ctrl X",
         "class": "mod_implicit"
+      },
+      {
+        "keys": ["KC_BTN3"],
+        "title": "Middle\nMouse"
+      },
+      {
+        "keys": ["SFT_CA"],
+        "title": "Ctrl A",
+        "hold_title": "Shift",
+        "class": "mod_down"
+      },
+      {
+        "keys": ["MT_SPC"],
+        "class": "active_layer"
       }
     ],
     "_FUN": [
@@ -410,6 +439,18 @@
       {
         "keys": ["SE_TILD", "SE_ACUT", "SE_GRV", "SE_CIRC", "SE_DIAE"],
         "class": "dead_key"
+      },
+      {
+        "keys": ["SYM_COP"],
+        "title": "©"
+      },
+      {
+        "keys": ["SYM_TM"],
+        "title": "™"
+      },
+      {
+        "keys": ["SYM_EUR"],
+        "title": "€"
       }
     ],
     "_WIN": [
@@ -466,7 +507,18 @@
         "class": "management"
       },
       {
-        "keys": ["SE_J", "SE_P", "SE_K", "SE_LPRN", "SE_RPRN"],
+        "keys": [
+          "SE_J",
+          "SE_P",
+          "SE_K",
+          "SE_LPRN",
+          "SE_RPRN",
+          "SE_V",
+          "SE_B",
+          "SE_M",
+          "SE_W",
+          "SE_F"
+        ],
         "class": "management"
       }
     ]
@@ -477,7 +529,7 @@
     "highlight_groups": {
       "quotes": ["dquo", "quot"],
       "smart_layers": ["num", "capsword"],
-      "angled": ["win_alt", "scln"],
+      "angled": ["perc", "scln"],
       "split_lower": ["lalt", "leader"],
       "boot": ["comb_boot_r", "comb_boot_l"]
     },
