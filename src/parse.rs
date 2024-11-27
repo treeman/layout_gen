@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use camino::Utf8PathBuf;
 use eyre::{eyre, OptionExt, Result};
 use regex::Regex;
@@ -6,7 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::LazyLock;
 
-use crate::render_opts::{MatrixHalf, MatrixPos, RenderOpts};
+use crate::render_opts::{MatrixPos, RenderOpts};
 
 #[derive(Debug)]
 pub struct ParseSettings {
@@ -28,12 +30,25 @@ impl ParseSettings {
         self.keyboard_dir().join("keyboard.json")
     }
 
+    pub fn info_json(&self) -> Utf8PathBuf {
+        self.keyboard_dir().join("info.json")
+    }
+
     pub fn keyboard_dir(&self) -> Utf8PathBuf {
         self.qmk_root.join("keyboards").join(&self.keyboard)
     }
 
+    pub fn base_keyboard_dir(&self) -> Utf8PathBuf {
+        let part = if let Some((part, _)) = self.keyboard.split_once("/") {
+            part
+        } else {
+            self.keyboard.as_str()
+        };
+        self.qmk_root.join("keyboards").join(part)
+    }
+
     pub fn keymap_dir(&self) -> Utf8PathBuf {
-        self.keyboard_dir().join("keymaps").join(&self.keymap)
+        self.base_keyboard_dir().join("keymaps").join(&self.keymap)
     }
 }
 
@@ -47,9 +62,18 @@ pub struct Keymap {
 impl Keymap {
     pub fn parse(input: &ParseSettings, render_opts: &RenderOpts) -> Result<Self> {
         let keymap_c = fs::read_to_string(input.keymap_c())?;
-        let keyboard_json = fs::read_to_string(input.keyboard_json())?;
+        let keyboard_json_path = input.keyboard_json();
+        let info_json_path = input.info_json();
+        let info = if keyboard_json_path.is_file() {
+            fs::read_to_string(keyboard_json_path)?
+        } else if info_json_path.is_file() {
+            fs::read_to_string(info_json_path)?
+        } else {
+            return Err(eyre!("Couldn't find keyboard.json or info.json at {keyboard_json_path} nor {info_json_path}"));
+        };
+
         let combos_def = fs::read_to_string(input.combos_def())?;
-        Self::parse_from_source(&keymap_c, &keyboard_json, &combos_def, render_opts)
+        Self::parse_from_source(&keymap_c, &info, &combos_def, render_opts)
     }
 
     pub fn parse_from_source(
@@ -109,8 +133,7 @@ impl Layer {
     pub fn new(def: LayerDef, spec: &KeyboardSpec, render_opts: &RenderOpts) -> Result<Self> {
         let layout_id = &def.layout_id.0;
         let layout_spec = spec
-            .layouts
-            .get(layout_id)
+            .get_layout(layout_id)
             .ok_or_eyre(format!("Failed to find layout spec for {}", layout_id))?;
 
         if def.keys.len() != layout_spec.layout.len() {
@@ -265,6 +288,20 @@ pub struct Keyboard {}
 #[derive(Deserialize, Debug)]
 pub struct KeyboardSpec {
     layouts: HashMap<String, LayoutSpec>,
+    layout_aliases: Option<HashMap<String, String>>,
+}
+
+impl KeyboardSpec {
+    pub fn get_layout(&self, id: &str) -> Option<&LayoutSpec> {
+        if let Some(layout) = self.layouts.get(id) {
+            return Some(layout);
+        }
+
+        if let Some(alias) = self.layout_aliases.as_ref().and_then(|map| map.get(id)) {
+            return self.get_layout(alias);
+        }
+        None
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -362,6 +399,7 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render_opts::MatrixHalf;
     use eyre::Result;
 
     #[test]

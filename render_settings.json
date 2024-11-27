@@ -115,6 +115,11 @@
         "class": "layer_down"
       },
       {
+        "keys": ["C(S(SE_M))"],
+        "title": "Ctrl Shift M",
+        "class": "mod_implicit"
+      },
+      {
         "keys": ["WNAV"],
         "class": "layer_down"
       },

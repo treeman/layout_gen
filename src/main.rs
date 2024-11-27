@@ -28,7 +28,7 @@ struct Args {
     output: String,
 }
 
-fn generate() -> Result<()> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     let render_opts = RenderOpts::parse(&Utf8PathBuf::from(args.render_opts))?;
@@ -46,8 +46,4 @@ fn generate() -> Result<()> {
     render::render(&keymap, &render_opts, &output_dir)?;
 
     Ok(())
-}
-
-fn main() {
-    generate().unwrap();
 }
