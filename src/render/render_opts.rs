@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 
 #[derive(Debug, Clone)]
 pub struct RenderOpts {
+    pub id: String,
     pub default_keys: HashMap<String, PartialKeyOpts>,
     pub layer_keys: HashMap<String, HashMap<String, PartialKeyOpts>>,
     pub legend: Vec<LegendSpec>,
@@ -20,15 +21,15 @@ pub struct RenderOpts {
 impl RenderOpts {
     pub fn parse(file: &Utf8Path) -> Result<Self> {
         let src = fs::read_to_string(file)?;
-        Self::parse_from_str(&src)
+        Self::parse_from_str(file.file_stem().unwrap(), &src)
     }
 
-    pub fn parse_from_str(s: &str) -> Result<Self> {
+    pub fn parse_from_str(id: &str, s: &str) -> Result<Self> {
         let spec: RenderSpec = serde_json::from_str(s)?;
-        Ok(Self::new(spec))
+        Ok(Self::new(id, spec))
     }
 
-    fn new(spec: RenderSpec) -> Self {
+    fn new(id: &str, spec: RenderSpec) -> Self {
         let mut default_keys = HashMap::new();
         let mut layer_keys: HashMap<String, HashMap<String, PartialKeyOpts>> = HashMap::new();
 
@@ -49,6 +50,7 @@ impl RenderOpts {
             }
         }
         Self {
+            id: id.into(),
             default_keys,
             layer_keys,
             legend: spec.legend,

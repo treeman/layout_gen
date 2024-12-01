@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::LazyLock;
 
-use crate::render_opts::{MatrixPos, RenderOpts};
+use crate::render::render_opts::{MatrixPos, RenderOpts};
 
 #[derive(Debug)]
 pub struct ParseSettings {

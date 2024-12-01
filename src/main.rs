@@ -1,13 +1,12 @@
 mod parse;
 mod render;
-mod render_opts;
 
 use camino::Utf8PathBuf;
 use clap::Parser;
 use eyre::Result;
 use parse::Keymap;
 use parse::ParseSettings;
-use render_opts::RenderOpts;
+use render::render_opts::RenderOpts;
 
 #[derive(Parser, Debug)]
 #[clap(version)]

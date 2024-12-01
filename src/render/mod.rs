@@ -1,11 +1,14 @@
+pub mod render_opts;
+
 use crate::parse::Combo;
+use crate::parse::Key;
 use crate::parse::Keymap;
 use crate::parse::Layer;
-use crate::render_opts::MatrixHalf;
-use crate::render_opts::RenderOpts;
 use camino::Utf8Path;
 use eyre::Result;
 use palette::{Hsv, IntoColor, Srgb};
+use render_opts::MatrixHalf;
+use render_opts::RenderOpts;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
@@ -47,6 +50,7 @@ fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> 
     writeln!(
         file,
         r#"<svg width='{max_x}px'
+    class="keyboard-legend"
     height='{max_y}x'
     viewBox='0 0 {max_x} {max_y}'
     xmlns='http://www.w3.org/2000/svg'
@@ -106,25 +110,20 @@ fn render_legend(render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> 
     Ok(())
 }
 
-fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
-    let path = output_dir.join(format!("{}.svg", layer.id.0));
-    let mut file = File::create(&path)?;
-
-    let key_w = 54.0;
-    let keymap_border = 10.0;
-
+fn write_open_svg(file: &mut File, id: &str, keys: &[Key], key_w: f32, border: f32) -> Result<()> {
     let mut max_x: f32 = 0.0;
     let mut max_y: f32 = 0.0;
-    for key in layer.keys.iter() {
+    for key in keys.iter() {
         max_x = max_x.max((1.0 + key.x) * key_w);
         max_y = max_y.max((1.0 + key.y) * key_w);
     }
-    max_x += keymap_border * 2.0;
-    max_y += keymap_border * 2.0;
+    max_x += border * 2.0;
+    max_y += border * 2.0;
 
     writeln!(
         file,
         r#"<svg width='{max_x}px'
+       class='keymap {id}'
        height='{max_y}x'
        viewBox='0 0 {max_x} {max_y}'
        xmlns='http://www.w3.org/2000/svg'
@@ -136,18 +135,29 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
         r#" <style type='text/css'>
     .keycap .border { stroke: black; stroke-width: 1; }
     .keycap .inner.border { stroke: rgba(0,0,0,.1); }
-    .keycap { font-family: sans-serif; font-size: 11px}
-    .keycap .sub { font-size: 9px}
+    .keycap { font-family: sans-serif; font-size: 11px }
+    .keycap .sub { font-size: 9px }
+    .combos .keycap { font-size: 8px }
   </style>
 "#
         .as_bytes(),
     )?;
 
+    Ok(())
+}
+
+fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
+    let path = output_dir.join(format!("{}.svg", layer.id.0));
+    let mut file = File::create(&path)?;
+
+    let key_w = 54.0;
+    let border = 10.0;
+
     write_layer_keys(
         &mut file,
         layer,
         render_opts,
-        keymap_border,
+        border,
         key_w,
         None,
         None,
@@ -174,6 +184,8 @@ fn write_layer_keys(
     override_class_map: Option<HashMap<&str, String>>,
     blank_class: Option<&str>,
 ) -> Result<()> {
+    write_open_svg(file, &render_opts.id, &layer.keys[..], key_w, keymap_border)?;
+
     let fallback_color = "#e5c494".to_string();
     for key in layer.keys.iter() {
         let key_opts = render_opts.get(&layer.id.0, &key.id.0);
@@ -344,37 +356,37 @@ impl<'a> CombosWithLayerRender<'a> {
 
         let key_w = 54.0;
         let keymap_border = 10.0;
-        let combo_text_h = 8.0;
+        // let combo_text_h = 8.0;
 
-        let mut max_x: f32 = 0.0;
-        let mut max_y: f32 = 0.0;
-        for key in self.base_layer.keys.iter() {
-            max_x = max_x.max((1.0 + key.x) * key_w);
-            max_y = max_y.max((1.0 + key.y) * key_w);
-        }
-        max_x += keymap_border * 2.0;
-        max_y += keymap_border * 2.0;
-
-        writeln!(
-            file,
-            r#"<svg width='{max_x}px'
-       height='{max_y}x'
-       viewBox='0 0 {max_x} {max_y}'
-       xmlns='http://www.w3.org/2000/svg'
-       xmlns:xlink="http://www.w3.org/1999/xlink">
-"#
-        )?;
-
-        writeln!(
-            file,
-            r#" <style type='text/css'>
-    .keycap .border {{ stroke: black; stroke-width: 1; }}
-    .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-    .keycap {{ font-family: sans-serif; font-size: 11px}}
-    .combos .keycap {{ font-size: {combo_text_h}px}}
-  </style>
-"#
-        )?;
+        //         let mut max_x: f32 = 0.0;
+        //         let mut max_y: f32 = 0.0;
+        //         for key in self.base_layer.keys.iter() {
+        //             max_x = max_x.max((1.0 + key.x) * key_w);
+        //             max_y = max_y.max((1.0 + key.y) * key_w);
+        //         }
+        //         max_x += keymap_border * 2.0;
+        //         max_y += keymap_border * 2.0;
+        //
+        //         writeln!(
+        //             file,
+        //             r#"<svg width='{max_x}px'
+        //        height='{max_y}x'
+        //        viewBox='0 0 {max_x} {max_y}'
+        //        xmlns='http://www.w3.org/2000/svg'
+        //        xmlns:xlink="http://www.w3.org/1999/xlink">
+        // "#
+        //         )?;
+        //
+        //         writeln!(
+        //             file,
+        //             r#" <style type='text/css'>
+        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
+        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
+        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
+        //     .combos .keycap {{ font-size: {combo_text_h}px}}
+        //   </style>
+        // "#
+        //         )?;
 
         write_layer_keys(
             &mut file,
@@ -565,37 +577,37 @@ impl<'a> ComboSeparateLayerRender<'a> {
 
         let key_w = 54.0;
         let keymap_border = 10.0;
-        let combo_text_h = 8.0;
+        // let combo_text_h = 8.0;
+        //
+        // let mut max_x: f32 = 0.0;
+        // let mut max_y: f32 = 0.0;
+        // for key in layer.keys.iter() {
+        //     max_x = max_x.max((1.0 + key.x) * key_w);
+        //     max_y = max_y.max((1.0 + key.y) * key_w);
+        // }
+        // max_x += keymap_border * 2.0;
+        // max_y += keymap_border * 2.0;
 
-        let mut max_x: f32 = 0.0;
-        let mut max_y: f32 = 0.0;
-        for key in layer.keys.iter() {
-            max_x = max_x.max((1.0 + key.x) * key_w);
-            max_y = max_y.max((1.0 + key.y) * key_w);
-        }
-        max_x += keymap_border * 2.0;
-        max_y += keymap_border * 2.0;
-
-        writeln!(
-            file,
-            r#"<svg width='{max_x}px'
-       height='{max_y}x'
-       viewBox='0 0 {max_x} {max_y}'
-       xmlns='http://www.w3.org/2000/svg'
-       xmlns:xlink="http://www.w3.org/1999/xlink">
-"#
-        )?;
-
-        writeln!(
-            file,
-            r#" <style type='text/css'>
-    .keycap .border {{ stroke: black; stroke-width: 1; }}
-    .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-    .keycap {{ font-family: sans-serif; font-size: 11px}}
-    .combos .keycap {{ font-size: {combo_text_h}px}}
-  </style>
-"#
-        )?;
+        //         writeln!(
+        //             file,
+        //             r#"<svg width='{max_x}px'
+        //        height='{max_y}x'
+        //        viewBox='0 0 {max_x} {max_y}'
+        //        xmlns='http://www.w3.org/2000/svg'
+        //        xmlns:xlink="http://www.w3.org/1999/xlink">
+        // "#
+        //         )?;
+        //
+        //         writeln!(
+        //             file,
+        //             r#" <style type='text/css'>
+        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
+        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
+        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
+        //     .combos .keycap {{ font-size: {combo_text_h}px}}
+        //   </style>
+        // "#
+        //         )?;
 
         let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
 
@@ -641,37 +653,37 @@ impl<'a> ComboGroupRender<'a> {
         let key_w = 54.0;
         let keymap_border = 10.0;
         let combo_text_h = 8.0;
-
-        let mut max_x: f32 = 0.0;
-        let mut max_y: f32 = 0.0;
-        for key in self.base_layer.keys.iter() {
-            max_x = max_x.max((1.0 + key.x) * key_w);
-            max_y = max_y.max((1.0 + key.y) * key_w);
-        }
-        max_x += keymap_border * 2.0;
-        max_y += keymap_border * 2.0;
-
-        writeln!(
-            file,
-            r#"<svg width='{max_x}px'
-       height='{max_y}x'
-       viewBox='0 0 {max_x} {max_y}'
-       xmlns='http://www.w3.org/2000/svg'
-       xmlns:xlink="http://www.w3.org/1999/xlink">
-"#
-        )?;
-
-        writeln!(
-            file,
-            r#" <style type='text/css'>
-    .keycap .border {{ stroke: black; stroke-width: 1; }}
-    .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-    .keycap {{ font-family: sans-serif; font-size: 11px}}
-    .combo-output {{ font-family: sans-serif; font-size: 16px}}
-    .combos .keycap {{ font-size: {combo_text_h}px}}
-  </style>
-"#
-        )?;
+        //
+        //         let mut max_x: f32 = 0.0;
+        //         let mut max_y: f32 = 0.0;
+        //         for key in self.base_layer.keys.iter() {
+        //             max_x = max_x.max((1.0 + key.x) * key_w);
+        //             max_y = max_y.max((1.0 + key.y) * key_w);
+        //         }
+        //         max_x += keymap_border * 2.0;
+        //         max_y += keymap_border * 2.0;
+        //
+        //         writeln!(
+        //             file,
+        //             r#"<svg width='{max_x}px'
+        //        height='{max_y}x'
+        //        viewBox='0 0 {max_x} {max_y}'
+        //        xmlns='http://www.w3.org/2000/svg'
+        //        xmlns:xlink="http://www.w3.org/1999/xlink">
+        // "#
+        //         )?;
+        //
+        //         writeln!(
+        //             file,
+        //             r#" <style type='text/css'>
+        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
+        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
+        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
+        //     .combo-output {{ font-family: sans-serif; font-size: 16px}}
+        //     .combos .keycap {{ font-size: {combo_text_h}px}}
+        //   </style>
+        // "#
+        //         )?;
 
         let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
 
@@ -769,37 +781,37 @@ impl<'a> ComboSingleRender<'a> {
         let key_w = 54.0;
         let keymap_border = 10.0;
         let combo_text_h = 8.0;
-
-        let mut max_x: f32 = 0.0;
-        let mut max_y: f32 = 0.0;
-        for key in self.base_layer.keys.iter() {
-            max_x = max_x.max((1.0 + key.x) * key_w);
-            max_y = max_y.max((1.0 + key.y) * key_w);
-        }
-        max_x += keymap_border * 2.0;
-        max_y += keymap_border * 2.0;
-
-        writeln!(
-            file,
-            r#"<svg width='{max_x}px'
-       height='{max_y}x'
-       viewBox='0 0 {max_x} {max_y}'
-       xmlns='http://www.w3.org/2000/svg'
-       xmlns:xlink="http://www.w3.org/1999/xlink">
-"#
-        )?;
-
-        writeln!(
-            file,
-            r#" <style type='text/css'>
-    .keycap .border {{ stroke: black; stroke-width: 1; }}
-    .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-    .keycap {{ font-family: sans-serif; font-size: 11px}}
-    .combo-output {{ font-family: sans-serif; font-size: 16px}}
-    .combos .keycap {{ font-size: {combo_text_h}px}}
-  </style>
-"#
-        )?;
+        //
+        //         let mut max_x: f32 = 0.0;
+        //         let mut max_y: f32 = 0.0;
+        //         for key in self.base_layer.keys.iter() {
+        //             max_x = max_x.max((1.0 + key.x) * key_w);
+        //             max_y = max_y.max((1.0 + key.y) * key_w);
+        //         }
+        //         max_x += keymap_border * 2.0;
+        //         max_y += keymap_border * 2.0;
+        //
+        //         writeln!(
+        //             file,
+        //             r#"<svg width='{max_x}px'
+        //        height='{max_y}x'
+        //        viewBox='0 0 {max_x} {max_y}'
+        //        xmlns='http://www.w3.org/2000/svg'
+        //        xmlns:xlink="http://www.w3.org/1999/xlink">
+        // "#
+        //         )?;
+        //
+        //         writeln!(
+        //             file,
+        //             r#" <style type='text/css'>
+        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
+        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
+        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
+        //     .combo-output {{ font-family: sans-serif; font-size: 16px}}
+        //     .combos .keycap {{ font-size: {combo_text_h}px}}
+        //   </style>
+        // "#
+        //         )?;
 
         let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
 
