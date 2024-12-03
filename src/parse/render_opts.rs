@@ -14,7 +14,7 @@ pub struct RenderOpts {
     pub layer_keys: HashMap<String, HashMap<String, PartialKeyOpts>>,
     pub legend: Vec<LegendSpec>,
     pub colors: HashMap<String, String>,
-    pub matrix: MatrixSpec,
+    pub physical_layout: PhysicalLayout,
     pub combos: CombosSpec,
 }
 
@@ -55,7 +55,8 @@ impl RenderOpts {
             layer_keys,
             legend: spec.legend,
             colors: spec.colors,
-            matrix: spec.matrix,
+            physical_layout: spec.physical_layout.convert(),
+            // matrix: spec.matrix,
             combos: spec.combos,
         }
     }
@@ -200,7 +201,7 @@ struct RenderSpec {
     layers: LayersSpec,
     legend: Vec<LegendSpec>,
     colors: HashMap<String, String>,
-    matrix: MatrixSpec,
+    physical_layout: PhysicalLayoutSpec,
     combos: CombosSpec,
 }
 
@@ -221,23 +222,10 @@ pub struct LegendSpec {
     pub title: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct MatrixSpec {
-    pub left_rows: Vec<usize>,
-    pub right_rows: Vec<usize>,
-}
-
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum MatrixHalf {
     Left,
     Right,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
-pub struct MatrixPos {
-    pub x: usize,
-    pub y: usize,
-    pub half: MatrixHalf,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
@@ -249,37 +237,64 @@ pub struct CombosSpec {
     pub single_img: HashSet<String>,
 }
 
-impl MatrixSpec {
-    // NOTE this is for the physical layout, not the qmk matrix spec
-    pub fn index_to_matrix_pos(&self, index: usize) -> MatrixPos {
-        assert_eq!(self.left_rows.len(), self.right_rows.len());
+#[derive(Deserialize, Debug, Clone)]
+struct PhysicalLayoutSpec(Vec<String>);
 
-        let mut curr_i = index;
-        for (row_i, (left_count, right_count)) in self
-            .left_rows
-            .iter()
-            .zip(self.right_rows.iter())
-            .enumerate()
-        {
-            if curr_i < *left_count {
-                return MatrixPos {
-                    x: curr_i,
-                    y: row_i,
-                    half: MatrixHalf::Left,
-                };
-            }
-            if curr_i < *left_count + *right_count {
-                return MatrixPos {
-                    x: curr_i,
-                    y: row_i,
-                    half: MatrixHalf::Right,
-                };
+impl PhysicalLayoutSpec {
+    fn convert(self) -> PhysicalLayout {
+        let mut lookup = Vec::new();
+
+        for (row, line) in self.0.into_iter().enumerate() {
+            let split: Vec<_> = line.trim_end().split("    ").collect();
+            assert!(split.len() <= 2);
+
+            let mut curr_col = 0;
+            for char in split[0].chars() {
+                if char != ' ' {
+                    lookup.push(PhysicalPos {
+                        col: curr_col,
+                        row,
+                        half: MatrixHalf::Left,
+                    });
+                }
+                curr_col += 1;
             }
 
-            curr_i -= left_count + right_count;
+            if split.len() > 1 {
+                for char in split[1].chars() {
+                    if char != ' ' {
+                        lookup.push(PhysicalPos {
+                            col: curr_col,
+                            row,
+                            half: MatrixHalf::Right,
+                        });
+                    }
+                    curr_col += 1;
+                }
+            }
         }
-        panic!("Key index overflow: {index}");
+
+        PhysicalLayout { lookup }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct PhysicalLayout {
+    lookup: Vec<PhysicalPos>,
+}
+
+impl PhysicalLayout {
+    pub fn index_to_pos(&self, index: usize) -> PhysicalPos {
+        assert!(index <= self.lookup.len());
+        self.lookup[index]
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub struct PhysicalPos {
+    pub col: usize,
+    pub row: usize,
+    pub half: MatrixHalf,
 }
 
 #[cfg(test)]
@@ -310,7 +325,7 @@ mod tests {
   ]
 }
         "#;
-        let opts = RenderOpts::parse_from_str(input)?;
+        let opts = RenderOpts::parse_from_str("id", input)?;
 
         let a = opts.get("_BASE", "SE_A");
         assert_eq!(
@@ -338,156 +353,113 @@ mod tests {
     }
 
     #[test]
-    fn test_index_to_matrix_pos() {
-        let spec = MatrixSpec {
-            left_rows: vec![5, 5, 5, 4],
-            right_rows: vec![5, 5, 5, 1],
-        };
-
+    fn test_physical_layout() {
+        let spec = PhysicalLayoutSpec(vec![
+            "xxxxx    xxxxx".into(),
+            "xxxxx    xxxxx".into(),
+            "xxxxx    xxxxx".into(),
+            " xx".into(),
+            "   xx    x".into(),
+        ]);
+        let layout = spec.convert();
         assert_eq!(
-            spec.index_to_matrix_pos(0),
-            MatrixPos {
-                x: 0,
-                y: 0,
+            layout.index_to_pos(0),
+            PhysicalPos {
+                col: 0,
+                row: 0,
                 half: MatrixHalf::Left
             }
         );
         assert_eq!(
-            spec.index_to_matrix_pos(1),
-            MatrixPos {
-                x: 1,
-                y: 0,
+            layout.index_to_pos(1),
+            PhysicalPos {
+                col: 1,
+                row: 0,
                 half: MatrixHalf::Left
             }
         );
         assert_eq!(
-            spec.index_to_matrix_pos(2),
-            MatrixPos {
-                x: 2,
-                y: 0,
-                half: MatrixHalf::Left
-            }
-        );
-        assert_eq!(
-            spec.index_to_matrix_pos(3),
-            MatrixPos {
-                x: 3,
-                y: 0,
-                half: MatrixHalf::Left
-            }
-        );
-        assert_eq!(
-            spec.index_to_matrix_pos(4),
-            MatrixPos {
-                x: 4,
-                y: 0,
-                half: MatrixHalf::Left
-            }
-        );
-        assert_eq!(
-            spec.index_to_matrix_pos(5),
-            MatrixPos {
-                x: 5,
-                y: 0,
+            layout.index_to_pos(5),
+            PhysicalPos {
+                col: 5,
+                row: 0,
                 half: MatrixHalf::Right
             }
         );
         assert_eq!(
-            spec.index_to_matrix_pos(6),
-            MatrixPos {
-                x: 6,
-                y: 0,
-                half: MatrixHalf::Right
-            }
-        );
-        assert_eq!(
-            spec.index_to_matrix_pos(7),
-            MatrixPos {
-                x: 7,
-                y: 0,
-                half: MatrixHalf::Right
-            }
-        );
-        assert_eq!(
-            spec.index_to_matrix_pos(8),
-            MatrixPos {
-                x: 8,
-                y: 0,
-                half: MatrixHalf::Right
-            }
-        );
-        assert_eq!(
-            spec.index_to_matrix_pos(9),
-            MatrixPos {
-                x: 9,
-                y: 0,
+            layout.index_to_pos(9),
+            PhysicalPos {
+                col: 9,
+                row: 0,
                 half: MatrixHalf::Right
             }
         );
 
         assert_eq!(
-            spec.index_to_matrix_pos(10),
-            MatrixPos {
-                x: 0,
-                y: 1,
+            layout.index_to_pos(10),
+            PhysicalPos {
+                col: 0,
+                row: 1,
                 half: MatrixHalf::Left
             }
         );
         assert_eq!(
-            spec.index_to_matrix_pos(19),
-            MatrixPos {
-                x: 9,
-                y: 1,
-                half: MatrixHalf::Right
-            }
-        );
-
-        assert_eq!(
-            spec.index_to_matrix_pos(20),
-            MatrixPos {
-                x: 0,
-                y: 2,
+            layout.index_to_pos(11),
+            PhysicalPos {
+                col: 1,
+                row: 1,
                 half: MatrixHalf::Left
             }
         );
 
         assert_eq!(
-            spec.index_to_matrix_pos(30),
-            MatrixPos {
-                x: 0,
-                y: 3,
+            layout.index_to_pos(20),
+            PhysicalPos {
+                col: 0,
+                row: 2,
+                half: MatrixHalf::Left
+            }
+        );
+
+        assert_eq!(
+            layout.index_to_pos(30),
+            PhysicalPos {
+                col: 1,
+                row: 3,
                 half: MatrixHalf::Left
             }
         );
         assert_eq!(
-            spec.index_to_matrix_pos(31),
-            MatrixPos {
-                x: 1,
-                y: 3,
+            layout.index_to_pos(31),
+            PhysicalPos {
+                col: 2,
+                row: 3,
+                half: MatrixHalf::Left
+            }
+        );
+
+        assert_eq!(
+            layout.index_to_pos(32),
+            PhysicalPos {
+                col: 3,
+                row: 4,
                 half: MatrixHalf::Left
             }
         );
         assert_eq!(
-            spec.index_to_matrix_pos(32),
-            MatrixPos {
-                x: 2,
-                y: 3,
+            layout.index_to_pos(33),
+            PhysicalPos {
+                col: 4,
+                row: 4,
                 half: MatrixHalf::Left
             }
         );
+
         assert_eq!(
-            spec.index_to_matrix_pos(33),
-            MatrixPos {
-                x: 3,
-                y: 3,
-                half: MatrixHalf::Left
-            }
-        );
-        assert_eq!(
-            spec.index_to_matrix_pos(34),
-            MatrixPos {
-                x: 4,
-                y: 3,
+            layout.index_to_pos(34),
+            PhysicalPos {
+                col: 5,
+                row: 4,
                 half: MatrixHalf::Right
             }
         );

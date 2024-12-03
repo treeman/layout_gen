@@ -551,7 +551,7 @@ impl<'a> ComboSeparateLayerRender<'a> {
         for combo in self.combos {
             let output_opts = self.render_opts.get(&self.base_layer.id.0, &combo.output);
             for key in &combo.keys {
-                changed.insert((key.matrix_pos.x, key.matrix_pos.y));
+                changed.insert((key.physical_pos.col, key.physical_pos.row));
 
                 if key.id.0 == self.active_key {
                     continue;
@@ -563,7 +563,7 @@ impl<'a> ComboSeparateLayerRender<'a> {
         }
         // This prevents a key with the same output as the combo showing up.
         for key in layer.keys.iter_mut() {
-            if !changed.contains(&(key.matrix_pos.x, key.matrix_pos.y)) {
+            if !changed.contains(&(key.physical_pos.col, key.physical_pos.row)) {
                 key.id.0 = "KC_NO".to_string();
             }
         }
@@ -718,7 +718,7 @@ impl<'a> ComboGroupRender<'a> {
             let w = if combo.keys.len() == 5 { 160.0 } else { 80.0 };
             let x = if combo.keys.len() == 5 {
                 let dist = h;
-                if combo.keys[0].matrix_pos.half == MatrixHalf::Left {
+                if combo.keys[0].physical_pos.half == MatrixHalf::Left {
                     (combo.keys[0].x + 1.0) * key_w + dist
                 } else {
                     combo.keys[4].x * key_w - w

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::LazyLock;
 
-use super::render_opts::{MatrixPos, RenderOpts};
+use super::render_opts::{PhysicalPos, RenderOpts};
 
 #[derive(Debug)]
 pub struct ParseSettings {
@@ -54,9 +54,6 @@ impl ParseSettings {
 pub struct Keymap {
     pub layers: Vec<Layer>,
     pub combos: Vec<Combo>,
-    // TODO this is only for the base layer!
-    // We need to have a lookup for every layer
-    pub matrix_lookup: MatrixLookup,
 }
 
 impl Keymap {
@@ -91,39 +88,25 @@ impl Keymap {
             .collect::<Result<Vec<_>>>()?;
 
         let base_layer = &layers[0];
-        let matrix_lookup = MatrixLookup::from_layer(base_layer);
 
         let combos = parse_combos_from_source(combos_def, base_layer)?;
 
-        Ok(Self {
-            layers,
-            combos,
-            matrix_lookup,
-        })
+        Ok(Self { layers, combos })
     }
 
     pub fn get_layer_id(&self, i: usize) -> Option<LayerId> {
         self.layers.get(i).map(|layer| layer.id.clone())
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct MatrixLookup {
-    pub keys: HashMap<(usize, usize), Key>,
-}
-
-impl MatrixLookup {
-    pub fn from_layer(base_layer: &Layer) -> Self {
-        let keys = base_layer
-            .keys
-            .iter()
-            .map(|key| ((key.matrix_pos.x, key.matrix_pos.y), key.clone()))
-            .collect();
-        Self { keys }
-    }
-
-    pub fn get(&self, col: usize, row: usize) -> Option<&Key> {
-        self.keys.get(&(col, row))
+    // TODO make this more efficient by pre-processing everything
+    pub fn find_key_by_matrix(&self, pos: (usize, usize)) -> Option<&Key> {
+        for layer in &self.layers {
+            let res = layer.find_key_by_matrix(pos);
+            if res.is_some() {
+                return res;
+            }
+        }
+        None
     }
 }
 
@@ -158,7 +141,8 @@ impl Layer {
                 id,
                 x: spec.x,
                 y: spec.y,
-                matrix_pos: render_opts.matrix.index_to_matrix_pos(i),
+                matrix_pos: spec.matrix,
+                physical_pos: render_opts.physical_layout.index_to_pos(i),
             })
             .collect();
 
@@ -166,6 +150,10 @@ impl Layer {
             id: def.layer_id,
             keys,
         })
+    }
+
+    pub fn find_key_by_matrix(&self, pos: (usize, usize)) -> Option<&Key> {
+        self.keys.iter().find(|key| key.matrix_pos == pos)
     }
 
     pub fn replace_key_id(&mut self, key_id: &str, replacement: &str) {
@@ -180,7 +168,8 @@ pub struct Key {
     pub id: KeyId,
     pub x: f32,
     pub y: f32,
-    pub matrix_pos: MatrixPos,
+    pub physical_pos: PhysicalPos,
+    pub matrix_pos: (usize, usize),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -209,7 +198,7 @@ pub struct Combo {
 impl Combo {
     pub fn new(id: String, output: String, mut keys: Vec<Key>) -> Self {
         // Make sure that keys are sorted in matrix position
-        keys.sort_by_key(|k| (k.matrix_pos.x, k.matrix_pos.y));
+        keys.sort_by_key(|k| (k.physical_pos.col, k.physical_pos.row));
         Combo { id, output, keys }
     }
 
@@ -252,8 +241,8 @@ impl Combo {
         let a = &self.keys[0];
         let b = &self.keys[1];
 
-        a.matrix_pos.y == b.matrix_pos.y
-            && (a.matrix_pos.x as i32 - b.matrix_pos.x as i32).abs() == 1
+        a.physical_pos.row == b.physical_pos.row
+            && (a.physical_pos.col as i32 - b.physical_pos.col as i32).abs() == 1
     }
 
     pub fn is_vertical_neighbour(&self) -> bool {
@@ -263,8 +252,8 @@ impl Combo {
         let a = &self.keys[0];
         let b = &self.keys[1];
 
-        a.matrix_pos.x == b.matrix_pos.x
-            && (a.matrix_pos.y as i32 - b.matrix_pos.y as i32).abs() == 1
+        a.physical_pos.col == b.physical_pos.col
+            && (a.physical_pos.row as i32 - b.physical_pos.row as i32).abs() == 1
     }
 
     pub fn is_mid_triple(&self) -> bool {
@@ -275,10 +264,10 @@ impl Combo {
         let b = &self.keys[1];
         let c = &self.keys[2];
 
-        a.matrix_pos.y == b.matrix_pos.y
-            && b.matrix_pos.y == c.matrix_pos.y
-            && c.matrix_pos.x - b.matrix_pos.x == 1
-            && b.matrix_pos.x - a.matrix_pos.x == 1
+        a.physical_pos.row == b.physical_pos.row
+            && b.physical_pos.row == c.physical_pos.row
+            && c.physical_pos.col - b.physical_pos.col == 1
+            && b.physical_pos.col - a.physical_pos.col == 1
     }
 
     pub fn contains_input_key(&self, input: &str) -> bool {
@@ -312,6 +301,7 @@ pub struct LayoutSpec {
 
 #[derive(Deserialize, Debug)]
 pub struct KeySpec {
+    matrix: (usize, usize),
     x: f32,
     y: f32,
 }
@@ -399,7 +389,7 @@ fn parse_combos_from_source(src: &str, base_layer: &Layer) -> Result<Vec<Combo>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render_opts::MatrixHalf;
+    use crate::parse::MatrixHalf;
     use eyre::Result;
 
     #[test]
@@ -491,20 +481,19 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
   "layers": {},
   "colors": {},
   "legend": [],
-  "matrix": {
-    "left_rows": [5, 5, 5, 4],
-    "right_rows": [5, 5, 5, 1]
-  }
+  "combos": [],
+  "physical_layout": [
+    "xxxxx    xxxxx",
+    "xxxxx    xxxxx",
+    "xxxxx    xxxxx",
+    " xx",
+    "   xx    x"
+  ]
 }
         "#;
-        let render_opts = RenderOpts::parse_from_str(render_input)?;
+        let render_opts = RenderOpts::parse_from_str("id", render_input)?;
 
         let keymap = Keymap::parse_from_source(keymap_c, keyboard_json, combos_def, &render_opts)?;
-
-        assert_eq!(keymap.matrix_lookup.get(0, 0).unwrap().id.0, "SE_J");
-        assert_eq!(keymap.matrix_lookup.get(2, 1).unwrap().id.0, "SE_T");
-        assert_eq!(keymap.matrix_lookup.get(3, 3).unwrap().id.0, "MT_SPC");
-        assert!(keymap.matrix_lookup.get(0, 4).is_none());
 
         assert_eq!(keymap.layers.len(), 2);
         assert_eq!(keymap.layers[0].id.0, "_BASE");
@@ -517,18 +506,18 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
         assert_eq!(keymap.combos[0].keys[0].id.0, "MT_SPC");
         assert_eq!(keymap.combos[0].keys[1].id.0, "SE_E");
         assert_eq!(
-            keymap.combos[0].keys[0].matrix_pos,
-            MatrixPos {
-                x: 3,
-                y: 3,
+            keymap.combos[0].keys[0].physical_pos,
+            PhysicalPos {
+                col: 3,
+                row: 3,
                 half: MatrixHalf::Left
             }
         );
         assert_eq!(
-            keymap.combos[0].keys[1].matrix_pos,
-            MatrixPos {
-                x: 4,
-                y: 3,
+            keymap.combos[0].keys[1].physical_pos,
+            PhysicalPos {
+                col: 4,
+                row: 3,
                 half: MatrixHalf::Right
             }
         );

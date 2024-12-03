@@ -47,10 +47,10 @@ fn convert_keylog_entries<'a>(
             continue;
         }
 
-        let key = match info.keymap.matrix_lookup.get(col, row) {
+        let key = match info.keymap.find_key_by_matrix((row, col)) {
             Some(key) => key,
             None => {
-                // println!("Could not find key for position {} {}", row, col);
+                println!("Could not find key for position {} {}", row, col);
                 // dbg!(&info.keymap.matrix_lookup.keys);
                 continue;
             }
@@ -73,17 +73,17 @@ fn convert_keylog_entries<'a>(
         });
     }
 
-    // TODO
-    // Top left corner is [1, 0] (need to accurately follow matrix spec)
-    // Top left of right-side keyboard is [4, 0] (it sets rows below)
-    // let mut out: Vec<String> = Vec::new();
-    // for ((x, y), key) in info.keymap.matrix_lookup.keys.iter() {
-    //     out.push(format!("  {x} {y} {}", key.id.0));
-    // }
-    // out.sort();
-    // for x in out {
-    //     println!("{x}");
-    // }
+    let mut out: Vec<String> = Vec::new();
+    for key in info.keymap.layers[0].keys.iter() {
+        out.push(format!(
+            "  ({} {}) {}",
+            key.matrix_pos.0, key.matrix_pos.1, key.id.0
+        ));
+    }
+    out.sort();
+    for x in out {
+        println!("{x}");
+    }
 
     // dbg!(&info.keymap.matrix_lookup);
 
