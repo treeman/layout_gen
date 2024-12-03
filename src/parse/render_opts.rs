@@ -250,6 +250,7 @@ pub struct CombosSpec {
 }
 
 impl MatrixSpec {
+    // NOTE this is for the physical layout, not the qmk matrix spec
     pub fn index_to_matrix_pos(&self, index: usize) -> MatrixPos {
         assert_eq!(self.left_rows.len(), self.right_rows.len());
 

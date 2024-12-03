@@ -1,14 +1,12 @@
-pub mod render_opts;
-
 use crate::parse::Combo;
+use crate::parse::InputInfo;
 use crate::parse::Key;
-use crate::parse::Keymap;
 use crate::parse::Layer;
+use crate::parse::MatrixHalf;
+use crate::parse::RenderOpts;
 use camino::Utf8Path;
 use eyre::Result;
 use palette::{Hsv, IntoColor, Srgb};
-use render_opts::MatrixHalf;
-use render_opts::RenderOpts;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
@@ -18,15 +16,20 @@ use std::str::FromStr;
 // - REFACTOR
 // - Add wrapping class specifying keyboard/keymap name
 
-pub fn render(keymap: &Keymap, render_opts: &RenderOpts, output_dir: &Utf8Path) -> Result<()> {
-    for layer in keymap.layers.iter() {
-        render_layer(layer, render_opts, output_dir)?;
+pub fn render(info: &InputInfo, output_dir: &Utf8Path) -> Result<()> {
+    for layer in info.keymap.layers.iter() {
+        render_layer(layer, &info.render_opts, output_dir)?;
     }
 
-    render_legend(render_opts, output_dir)?;
+    render_legend(&info.render_opts, output_dir)?;
 
-    let base_layer = &keymap.layers[0];
-    render_combos(&keymap.combos, base_layer, render_opts, output_dir)?;
+    let base_layer = &info.keymap.layers[0];
+    render_combos(
+        &info.keymap.combos,
+        base_layer,
+        &info.render_opts,
+        output_dir,
+    )?;
 
     Ok(())
 }
