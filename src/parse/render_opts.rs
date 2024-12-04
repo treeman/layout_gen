@@ -2,9 +2,11 @@ use camino::Utf8Path;
 use eyre::Result;
 use regex::Regex;
 use serde::Deserialize;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 #[derive(Debug, Clone)]
@@ -15,7 +17,8 @@ pub struct RenderOpts {
     pub legend: Vec<LegendSpec>,
     pub colors: HashMap<String, String>,
     pub physical_layout: PhysicalLayout,
-    pub combos: CombosSpec,
+    pub finger_assignmens: PhysicalLayout,
+    pub outputs: RenderOutputs,
 }
 
 impl RenderOpts {
@@ -49,6 +52,7 @@ impl RenderOpts {
                 }
             }
         }
+
         Self {
             id: id.into(),
             default_keys,
@@ -56,8 +60,8 @@ impl RenderOpts {
             legend: spec.legend,
             colors: spec.colors,
             physical_layout: spec.physical_layout.convert(),
-            // matrix: spec.matrix,
-            combos: spec.combos,
+            finger_assignmens: spec.finger_assignments.convert(),
+            outputs: spec.outputs,
         }
     }
 
@@ -74,6 +78,62 @@ impl RenderOpts {
             }
         }
         res
+    }
+
+    pub fn assigned_finger(&self, pos: (usize, usize)) -> Finger {
+        let spec = self.finger_assignmens.get(pos);
+        match spec.value {
+            0 => Finger::Pinky,
+            1 => Finger::Ring,
+            2 => Finger::Middle,
+            3 => Finger::Index,
+            4 => Finger::Thumb,
+            _ => panic!("Finger value {} unknown", spec.value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FingerAssignment {
+    pub finger: Finger,
+    pub half: MatrixHalf,
+}
+
+impl PartialOrd for FingerAssignment {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other)) // Delegate to cmp
+    }
+}
+
+impl Ord for FingerAssignment {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self.half, other.half) {
+            (MatrixHalf::Left, MatrixHalf::Left) => self.finger.cmp(&other.finger),
+            (MatrixHalf::Right, MatrixHalf::Right) => self.finger.cmp(&other.finger).reverse(),
+            _ => self.half.cmp(&other.half),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Finger {
+    Pinky,
+    Ring,
+    Middle,
+    Index,
+    Thumb,
+}
+
+impl std::fmt::Display for Finger {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = match self {
+            Finger::Pinky => "pinky",
+            Finger::Ring => "ring",
+            Finger::Middle => "middle",
+            Finger::Index => "index",
+            Finger::Thumb => "thumb",
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -202,7 +262,8 @@ struct RenderSpec {
     legend: Vec<LegendSpec>,
     colors: HashMap<String, String>,
     physical_layout: PhysicalLayoutSpec,
-    combos: CombosSpec,
+    finger_assignments: PhysicalLayoutSpec,
+    outputs: RenderOutputs,
 }
 
 type LayersSpec = HashMap<String, LayerSpec>;
@@ -222,19 +283,30 @@ pub struct LegendSpec {
     pub title: String,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum MatrixHalf {
     Left,
     Right,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
-pub struct CombosSpec {
-    pub background_layer_class: String,
-    pub keys_with_separate_imgs: HashSet<String>,
+#[derive(Deserialize, Debug, Clone)]
+pub struct RenderOutputs {
+    #[serde(default)]
+    pub effort: bool,
+    #[serde(default = "default_true")]
+    pub layers: bool,
+    #[serde(default = "default_true")]
+    pub legend: bool,
+    #[serde(default = "default_true")]
+    pub combos: bool,
+    pub combo_keys_with_separate_imgs: HashSet<String>,
+    pub combo_highlight_groups: HashMap<String, HashSet<String>>,
+    pub combo_background_layer_class: String,
     pub active_class_in_separate_layer: String,
-    pub highlight_groups: HashMap<String, HashSet<String>>,
-    pub single_img: HashSet<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -242,7 +314,7 @@ struct PhysicalLayoutSpec(Vec<String>);
 
 impl PhysicalLayoutSpec {
     fn convert(self) -> PhysicalLayout {
-        let mut lookup = Vec::new();
+        let mut index_to_pos = Vec::new();
 
         for (row, line) in self.0.into_iter().enumerate() {
             let split: Vec<_> = line.trim_end().split("    ").collect();
@@ -251,10 +323,13 @@ impl PhysicalLayoutSpec {
             let mut curr_col = 0;
             for char in split[0].chars() {
                 if char != ' ' {
-                    lookup.push(PhysicalPos {
+                    index_to_pos.push(PhysicalPos {
                         col: curr_col,
                         row,
                         half: MatrixHalf::Left,
+                        value: char
+                            .to_digit(10)
+                            .expect("Physical layout should contain digits"),
                     });
                 }
                 curr_col += 1;
@@ -263,10 +338,13 @@ impl PhysicalLayoutSpec {
             if split.len() > 1 {
                 for char in split[1].chars() {
                     if char != ' ' {
-                        lookup.push(PhysicalPos {
+                        index_to_pos.push(PhysicalPos {
                             col: curr_col,
                             row,
                             half: MatrixHalf::Right,
+                            value: char
+                                .to_digit(10)
+                                .expect("Physical layout should contain digits"),
                         });
                     }
                     curr_col += 1;
@@ -274,19 +352,37 @@ impl PhysicalLayoutSpec {
             }
         }
 
-        PhysicalLayout { lookup }
+        let pos_to_index = index_to_pos
+            .iter()
+            .enumerate()
+            .map(|x: (usize, &PhysicalPos)| ((x.1.col, x.1.row), x.0))
+            .collect();
+
+        PhysicalLayout {
+            index_to_pos,
+            pos_to_index,
+        }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct PhysicalLayout {
-    lookup: Vec<PhysicalPos>,
+    index_to_pos: Vec<PhysicalPos>,
+    pos_to_index: HashMap<(usize, usize), usize>,
 }
 
 impl PhysicalLayout {
     pub fn index_to_pos(&self, index: usize) -> PhysicalPos {
-        assert!(index <= self.lookup.len());
-        self.lookup[index]
+        assert!(index <= self.index_to_pos.len());
+        self.index_to_pos[index]
+    }
+
+    pub fn get(&self, pos: (usize, usize)) -> PhysicalPos {
+        let index = self
+            .pos_to_index
+            .get(&pos)
+            .unwrap_or_else(|| panic!("Couldn't map {pos:?} to index"));
+        self.index_to_pos(*index)
     }
 }
 
@@ -295,6 +391,13 @@ pub struct PhysicalPos {
     pub col: usize,
     pub row: usize,
     pub half: MatrixHalf,
+    pub value: u32,
+}
+
+impl PhysicalPos {
+    pub fn pos(&self) -> (usize, usize) {
+        (self.col, self.row)
+    }
 }
 
 #[cfg(test)]
@@ -355,11 +458,11 @@ mod tests {
     #[test]
     fn test_physical_layout() {
         let spec = PhysicalLayoutSpec(vec![
-            "xxxxx    xxxxx".into(),
-            "xxxxx    xxxxx".into(),
-            "xxxxx    xxxxx".into(),
-            " xx".into(),
-            "   xx    x".into(),
+            "54446    64445".into(),
+            "21005    50012".into(),
+            "64436    63446".into(),
+            " 77".into(),
+            "   80    0".into(),
         ]);
         let layout = spec.convert();
         assert_eq!(

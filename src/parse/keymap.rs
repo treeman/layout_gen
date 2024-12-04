@@ -98,16 +98,27 @@ impl Keymap {
         self.layers.get(i).map(|layer| layer.id.clone())
     }
 
-    // TODO make this more efficient by pre-processing everything
-    pub fn find_key_by_matrix(&self, pos: (usize, usize)) -> Option<&Key> {
-        for layer in &self.layers {
-            let res = layer.find_key_by_matrix(pos);
-            if res.is_some() {
-                return res;
+    pub fn find_key_by_matrix(&self, highest_layer: usize, pos: (usize, usize)) -> Option<&Key> {
+        let mut curr_layer = highest_layer;
+        loop {
+            let layer = &self.layers[curr_layer];
+
+            if let Some(key) = layer.find_key_by_matrix(pos) {
+                if !is_fallback_key(&key.id) {
+                    return Some(key);
+                }
             }
+
+            if curr_layer == 0 {
+                return None;
+            }
+            curr_layer -= 1;
         }
-        None
     }
+}
+
+fn is_fallback_key(id: &KeyId) -> bool {
+    matches!(id.0.as_str(), "_______" | "xxxxxxx")
 }
 
 #[derive(Debug, Clone)]
@@ -175,11 +186,29 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeyId(pub String);
 
+impl std::fmt::Display for KeyId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LayerId(pub String);
 
+impl std::fmt::Display for LayerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LayoutId(pub String);
+
+impl std::fmt::Display for LayoutId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LayerDef {
@@ -481,13 +510,18 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
   "layers": {},
   "colors": {},
   "legend": [],
-  "combos": [],
+  "outputs": {
+    "combo_keys_with_separate_imgs": [],
+    "combo_highlight_groups": {},
+    "combo_background_layer_class": "combo_background",
+    "active_class_in_separate_layer": "active_layer"
+  },
   "physical_layout": [
-    "xxxxx    xxxxx",
-    "xxxxx    xxxxx",
-    "xxxxx    xxxxx",
-    " xx",
-    "   xx    x"
+    "54446    64445",
+    "21005    50012",
+    "64436    63446",
+    " 77",
+    "   80    0"
   ]
 }
         "#;
@@ -501,23 +535,23 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
         assert_eq!(keymap.layers[1].id.0, "_NUM");
         assert_eq!(keymap.layers[1].keys[1].id.0, "SE_PLUS");
 
-        assert_eq!(keymap.combos.len(), 5);
+        assert_eq!(keymap.combos.len(), 6);
         assert_eq!(keymap.combos[0].output, "NUMWORD");
         assert_eq!(keymap.combos[0].keys[0].id.0, "MT_SPC");
         assert_eq!(keymap.combos[0].keys[1].id.0, "SE_E");
         assert_eq!(
             keymap.combos[0].keys[0].physical_pos,
             PhysicalPos {
-                col: 3,
-                row: 3,
+                col: 4,
+                row: 4,
                 half: MatrixHalf::Left
             }
         );
         assert_eq!(
             keymap.combos[0].keys[1].physical_pos,
             PhysicalPos {
-                col: 4,
-                row: 3,
+                col: 5,
+                row: 4,
                 half: MatrixHalf::Right
             }
         );

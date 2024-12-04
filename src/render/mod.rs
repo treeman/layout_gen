@@ -17,19 +17,30 @@ use std::str::FromStr;
 // - Add wrapping class specifying keyboard/keymap name
 
 pub fn render(info: &InputInfo, output_dir: &Utf8Path) -> Result<()> {
-    for layer in info.keymap.layers.iter() {
-        render_layer(layer, &info.render_opts, output_dir)?;
+    if info.render_opts.outputs.layers {
+        for layer in info.keymap.layers.iter() {
+            render_layer(layer, &info.render_opts, output_dir)?;
+        }
     }
 
-    render_legend(&info.render_opts, output_dir)?;
+    if info.render_opts.outputs.legend {
+        render_legend(&info.render_opts, output_dir)?;
+    }
 
-    let base_layer = &info.keymap.layers[0];
-    render_combos(
-        &info.keymap.combos,
-        base_layer,
-        &info.render_opts,
-        output_dir,
-    )?;
+    if info.render_opts.outputs.combos {
+        let base_layer = &info.keymap.layers[0];
+        render_combos(
+            &info.keymap.combos,
+            base_layer,
+            &info.render_opts,
+            output_dir,
+        )?;
+    }
+
+    if info.render_opts.outputs.effort {
+        let base_layer = &info.keymap.layers[0];
+        render_effort_grid(base_layer, &info.render_opts, output_dir)?;
+    }
 
     Ok(())
 }
@@ -174,8 +185,6 @@ fn render_layer(layer: &Layer, render_opts: &RenderOpts, output_dir: &Utf8Path) 
     Ok(())
 }
 
-// TODO split out in strut
-// TODO can render svg viewport as well
 #[allow(clippy::too_many_arguments)]
 fn write_layer_keys(
     file: &mut File,
@@ -184,7 +193,7 @@ fn write_layer_keys(
     keymap_border: f32,
     key_w: f32,
     override_class: Option<&str>,
-    override_class_map: Option<HashMap<&str, String>>,
+    override_class_map: Option<HashMap<String, String>>,
     blank_class: Option<&str>,
 ) -> Result<()> {
     write_open_svg(file, &render_opts.id, &layer.keys[..], key_w, keymap_border)?;
@@ -254,7 +263,12 @@ fn render_combos(
         // A combo can be contained in several of the separate layouts
         for key in &combo.keys {
             let id = &key.id.0;
-            if combo.keys.len() == 2 && render_opts.combos.keys_with_separate_imgs.contains(id) {
+            if combo.keys.len() == 2
+                && render_opts
+                    .outputs
+                    .combo_keys_with_separate_imgs
+                    .contains(id)
+            {
                 combos_with_separate_layouts
                     .entry(id)
                     .and_modify(|key_combos: &mut Vec<&Combo>| key_combos.push(combo))
@@ -263,12 +277,12 @@ fn render_combos(
             }
         }
 
-        if render_opts.combos.single_img.contains(&combo.id) {
-            other_combos.push(combo);
-            handled = true;
-        }
+        // if render_opts.outputs.single_img.contains(&combo.id) {
+        //     other_combos.push(combo);
+        //     handled = true;
+        // }
 
-        for (group_id, combo_ids) in &render_opts.combos.highlight_groups {
+        for (group_id, combo_ids) in &render_opts.outputs.combo_highlight_groups {
             if combo_ids.contains(&combo.id) {
                 highlight_groups
                     .entry(group_id)
@@ -359,37 +373,6 @@ impl<'a> CombosWithLayerRender<'a> {
 
         let key_w = 54.0;
         let keymap_border = 10.0;
-        // let combo_text_h = 8.0;
-
-        //         let mut max_x: f32 = 0.0;
-        //         let mut max_y: f32 = 0.0;
-        //         for key in self.base_layer.keys.iter() {
-        //             max_x = max_x.max((1.0 + key.x) * key_w);
-        //             max_y = max_y.max((1.0 + key.y) * key_w);
-        //         }
-        //         max_x += keymap_border * 2.0;
-        //         max_y += keymap_border * 2.0;
-        //
-        //         writeln!(
-        //             file,
-        //             r#"<svg width='{max_x}px'
-        //        height='{max_y}x'
-        //        viewBox='0 0 {max_x} {max_y}'
-        //        xmlns='http://www.w3.org/2000/svg'
-        //        xmlns:xlink="http://www.w3.org/1999/xlink">
-        // "#
-        //         )?;
-        //
-        //         writeln!(
-        //             file,
-        //             r#" <style type='text/css'>
-        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
-        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
-        //     .combos .keycap {{ font-size: {combo_text_h}px}}
-        //   </style>
-        // "#
-        //         )?;
 
         write_layer_keys(
             &mut file,
@@ -397,7 +380,12 @@ impl<'a> CombosWithLayerRender<'a> {
             self.render_opts,
             keymap_border,
             key_w,
-            Some(self.render_opts.combos.background_layer_class.as_str()),
+            Some(
+                self.render_opts
+                    .outputs
+                    .combo_background_layer_class
+                    .as_str(),
+            ),
             None,
             None,
         )?;
@@ -558,7 +546,7 @@ impl<'a> ComboSeparateLayerRender<'a> {
                 }
                 layer.replace_key_id(&key.id.0, &combo.output);
 
-                class_overrides.insert(combo.output.as_str(), output_opts.class.to_string());
+                class_overrides.insert(combo.output.clone(), output_opts.class.to_string());
             }
         }
         // This prevents a key with the same output as the combo showing up.
@@ -569,9 +557,9 @@ impl<'a> ComboSeparateLayerRender<'a> {
         }
 
         class_overrides.insert(
-            self.active_key,
+            self.active_key.to_string(),
             self.render_opts
-                .combos
+                .outputs
                 .active_class_in_separate_layer
                 .clone(),
         );
@@ -580,39 +568,12 @@ impl<'a> ComboSeparateLayerRender<'a> {
 
         let key_w = 54.0;
         let keymap_border = 10.0;
-        // let combo_text_h = 8.0;
-        //
-        // let mut max_x: f32 = 0.0;
-        // let mut max_y: f32 = 0.0;
-        // for key in layer.keys.iter() {
-        //     max_x = max_x.max((1.0 + key.x) * key_w);
-        //     max_y = max_y.max((1.0 + key.y) * key_w);
-        // }
-        // max_x += keymap_border * 2.0;
-        // max_y += keymap_border * 2.0;
 
-        //         writeln!(
-        //             file,
-        //             r#"<svg width='{max_x}px'
-        //        height='{max_y}x'
-        //        viewBox='0 0 {max_x} {max_y}'
-        //        xmlns='http://www.w3.org/2000/svg'
-        //        xmlns:xlink="http://www.w3.org/1999/xlink">
-        // "#
-        //         )?;
-        //
-        //         writeln!(
-        //             file,
-        //             r#" <style type='text/css'>
-        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
-        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
-        //     .combos .keycap {{ font-size: {combo_text_h}px}}
-        //   </style>
-        // "#
-        //         )?;
-
-        let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
+        let background_layer_class = self
+            .render_opts
+            .outputs
+            .combo_background_layer_class
+            .as_str();
 
         write_layer_keys(
             &mut file,
@@ -647,7 +608,7 @@ impl<'a> ComboGroupRender<'a> {
             let output_opts = self.render_opts.get(&self.base_layer.id.0, &combo.output);
             let class = output_opts.class.to_string();
             for key in &combo.keys {
-                class_overrides.insert(key.id.0.as_str(), class.clone());
+                class_overrides.insert(key.id.0.clone(), class.clone());
             }
         }
 
@@ -656,39 +617,12 @@ impl<'a> ComboGroupRender<'a> {
         let key_w = 54.0;
         let keymap_border = 10.0;
         let combo_text_h = 8.0;
-        //
-        //         let mut max_x: f32 = 0.0;
-        //         let mut max_y: f32 = 0.0;
-        //         for key in self.base_layer.keys.iter() {
-        //             max_x = max_x.max((1.0 + key.x) * key_w);
-        //             max_y = max_y.max((1.0 + key.y) * key_w);
-        //         }
-        //         max_x += keymap_border * 2.0;
-        //         max_y += keymap_border * 2.0;
-        //
-        //         writeln!(
-        //             file,
-        //             r#"<svg width='{max_x}px'
-        //        height='{max_y}x'
-        //        viewBox='0 0 {max_x} {max_y}'
-        //        xmlns='http://www.w3.org/2000/svg'
-        //        xmlns:xlink="http://www.w3.org/1999/xlink">
-        // "#
-        //         )?;
-        //
-        //         writeln!(
-        //             file,
-        //             r#" <style type='text/css'>
-        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
-        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
-        //     .combo-output {{ font-family: sans-serif; font-size: 16px}}
-        //     .combos .keycap {{ font-size: {combo_text_h}px}}
-        //   </style>
-        // "#
-        //         )?;
 
-        let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
+        let background_layer_class = self
+            .render_opts
+            .outputs
+            .combo_background_layer_class
+            .as_str();
 
         write_layer_keys(
             &mut file,
@@ -776,7 +710,7 @@ impl<'a> ComboSingleRender<'a> {
             .get(&self.base_layer.id.0, &self.combo.output);
         let class = output_opts.class.to_string();
         for key in &self.combo.keys {
-            class_overrides.insert(key.id.0.as_str(), class.clone());
+            class_overrides.insert(key.id.0.clone(), class.clone());
         }
 
         let mut file = File::create(self.path)?;
@@ -784,39 +718,12 @@ impl<'a> ComboSingleRender<'a> {
         let key_w = 54.0;
         let keymap_border = 10.0;
         let combo_text_h = 8.0;
-        //
-        //         let mut max_x: f32 = 0.0;
-        //         let mut max_y: f32 = 0.0;
-        //         for key in self.base_layer.keys.iter() {
-        //             max_x = max_x.max((1.0 + key.x) * key_w);
-        //             max_y = max_y.max((1.0 + key.y) * key_w);
-        //         }
-        //         max_x += keymap_border * 2.0;
-        //         max_y += keymap_border * 2.0;
-        //
-        //         writeln!(
-        //             file,
-        //             r#"<svg width='{max_x}px'
-        //        height='{max_y}x'
-        //        viewBox='0 0 {max_x} {max_y}'
-        //        xmlns='http://www.w3.org/2000/svg'
-        //        xmlns:xlink="http://www.w3.org/1999/xlink">
-        // "#
-        //         )?;
-        //
-        //         writeln!(
-        //             file,
-        //             r#" <style type='text/css'>
-        //     .keycap .border {{ stroke: black; stroke-width: 1; }}
-        //     .keycap .inner.border {{ stroke: rgba(0,0,0,.1); }}
-        //     .keycap {{ font-family: sans-serif; font-size: 11px}}
-        //     .combo-output {{ font-family: sans-serif; font-size: 16px}}
-        //     .combos .keycap {{ font-size: {combo_text_h}px}}
-        //   </style>
-        // "#
-        //         )?;
 
-        let background_layer_class = self.render_opts.combos.background_layer_class.as_str();
+        let background_layer_class = self
+            .render_opts
+            .outputs
+            .combo_background_layer_class
+            .as_str();
 
         write_layer_keys(
             &mut file,
@@ -881,6 +788,47 @@ impl<'a> ComboSingleRender<'a> {
 
         Ok(())
     }
+}
+
+fn render_effort_grid(
+    base_layer: &Layer,
+    render_opts: &RenderOpts,
+    output_dir: &Utf8Path,
+) -> Result<()> {
+    let path = output_dir.join("effort_grid.svg");
+    let mut file = File::create(&path)?;
+
+    let mut override_class_map = HashMap::new();
+
+    let mut effort_layer = base_layer.clone();
+    for key in effort_layer.keys.iter_mut() {
+        let effort = render_opts
+            .physical_layout
+            .get((key.physical_pos.col, key.physical_pos.row))
+            .value;
+        // println!("{}: {}", key.id.0, effort);
+        let id = effort.to_string();
+        override_class_map.insert(id.clone(), format!("effort_{id}"));
+        key.id.0 = id;
+    }
+
+    let key_w = 54.0;
+    let border = 10.0;
+
+    write_layer_keys(
+        &mut file,
+        &effort_layer,
+        render_opts,
+        border,
+        key_w,
+        None,
+        Some(override_class_map),
+        None,
+    )?;
+
+    file.write_all("</svg>".as_bytes())?;
+    println!("{}", path);
+    Ok(())
 }
 
 struct KeyRender<'a> {
