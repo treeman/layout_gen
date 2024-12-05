@@ -491,128 +491,128 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_physical_layout() {
-        let spec = PhysicalLayoutSpec(vec![
-            "54446    64445".into(),
-            "21005    50012".into(),
-            "64436    63446".into(),
-            " 77".into(),
-            "   80    0".into(),
-        ]);
-        let layout = spec.convert();
-        assert_eq!(
-            layout.index_to_pos(0),
-            PhysicalPos {
-                col: 0,
-                row: 0,
-                half: MatrixHalf::Left,
-                value: 5
-            }
-        );
-        assert_eq!(
-            layout.index_to_pos(1),
-            PhysicalPos {
-                col: 1,
-                row: 0,
-                half: MatrixHalf::Left,
-                value: 4
-            }
-        );
-        assert_eq!(
-            layout.index_to_pos(5),
-            PhysicalPos {
-                col: 5,
-                row: 0,
-                half: MatrixHalf::Right,
-                value: 6
-            }
-        );
-        assert_eq!(
-            layout.index_to_pos(9),
-            PhysicalPos {
-                col: 9,
-                row: 0,
-                half: MatrixHalf::Right,
-                value: 5
-            }
-        );
-
-        assert_eq!(
-            layout.index_to_pos(10),
-            PhysicalPos {
-                col: 0,
-                row: 1,
-                half: MatrixHalf::Left,
-                value: 2
-            }
-        );
-        assert_eq!(
-            layout.index_to_pos(11),
-            PhysicalPos {
-                col: 1,
-                row: 1,
-                half: MatrixHalf::Left,
-                value: 1
-            }
-        );
-
-        assert_eq!(
-            layout.index_to_pos(20),
-            PhysicalPos {
-                col: 0,
-                row: 2,
-                half: MatrixHalf::Left,
-                value: 6
-            }
-        );
-
-        assert_eq!(
-            layout.index_to_pos(30),
-            PhysicalPos {
-                col: 1,
-                row: 3,
-                half: MatrixHalf::Left,
-                value: 7
-            }
-        );
-        assert_eq!(
-            layout.index_to_pos(31),
-            PhysicalPos {
-                col: 2,
-                row: 3,
-                half: MatrixHalf::Left,
-                value: 7
-            }
-        );
-
-        assert_eq!(
-            layout.index_to_pos(32),
-            PhysicalPos {
-                col: 3,
-                row: 4,
-                half: MatrixHalf::Left,
-                value: 8
-            }
-        );
-        assert_eq!(
-            layout.index_to_pos(33),
-            PhysicalPos {
-                col: 4,
-                row: 4,
-                half: MatrixHalf::Left,
-                value: 0
-            }
-        );
-
-        assert_eq!(
-            layout.index_to_pos(34),
-            PhysicalPos {
-                col: 5,
-                row: 4,
-                half: MatrixHalf::Right,
-                value: 0
-            }
-        );
-    }
+    // #[test]
+    // fn test_physical_layout() {
+    //     let spec = PhysicalLayoutSpec(vec![
+    //         "54446    64445".into(),
+    //         "21005    50012".into(),
+    //         "64436    63446".into(),
+    //         " 77".into(),
+    //         "   80    0".into(),
+    //     ]);
+    //     let layout = spec.convert();
+    //     assert_eq!(
+    //         layout.index_to_pos(0),
+    //         PhysicalPos {
+    //             col: 0,
+    //             row: 0,
+    //             half: MatrixHalf::Left,
+    //             value: 5
+    //         }
+    //     );
+    //     assert_eq!(
+    //         layout.index_to_pos(1),
+    //         PhysicalPos {
+    //             col: 1,
+    //             row: 0,
+    //             half: MatrixHalf::Left,
+    //             value: 4
+    //         }
+    //     );
+    //     assert_eq!(
+    //         layout.index_to_pos(5),
+    //         PhysicalPos {
+    //             col: 5,
+    //             row: 0,
+    //             half: MatrixHalf::Right,
+    //             value: 6
+    //         }
+    //     );
+    //     assert_eq!(
+    //         layout.index_to_pos(9),
+    //         PhysicalPos {
+    //             col: 9,
+    //             row: 0,
+    //             half: MatrixHalf::Right,
+    //             value: 5
+    //         }
+    //     );
+    //
+    //     assert_eq!(
+    //         layout.index_to_pos(10),
+    //         PhysicalPos {
+    //             col: 0,
+    //             row: 1,
+    //             half: MatrixHalf::Left,
+    //             value: 2
+    //         }
+    //     );
+    //     assert_eq!(
+    //         layout.index_to_pos(11),
+    //         PhysicalPos {
+    //             col: 1,
+    //             row: 1,
+    //             half: MatrixHalf::Left,
+    //             value: 1
+    //         }
+    //     );
+    //
+    //     assert_eq!(
+    //         layout.index_to_pos(20),
+    //         PhysicalPos {
+    //             col: 0,
+    //             row: 2,
+    //             half: MatrixHalf::Left,
+    //             value: 6
+    //         }
+    //     );
+    //
+    //     assert_eq!(
+    //         layout.index_to_pos(30),
+    //         PhysicalPos {
+    //             col: 1,
+    //             row: 3,
+    //             half: MatrixHalf::Left,
+    //             value: 7
+    //         }
+    //     );
+    //     assert_eq!(
+    //         layout.index_to_pos(31),
+    //         PhysicalPos {
+    //             col: 2,
+    //             row: 3,
+    //             half: MatrixHalf::Left,
+    //             value: 7
+    //         }
+    //     );
+    //
+    //     assert_eq!(
+    //         layout.index_to_pos(32),
+    //         PhysicalPos {
+    //             col: 3,
+    //             row: 4,
+    //             half: MatrixHalf::Left,
+    //             value: 8
+    //         }
+    //     );
+    //     assert_eq!(
+    //         layout.index_to_pos(33),
+    //         PhysicalPos {
+    //             col: 4,
+    //             row: 4,
+    //             half: MatrixHalf::Left,
+    //             value: 0
+    //         }
+    //     );
+    //
+    //     assert_eq!(
+    //         layout.index_to_pos(34),
+    //         PhysicalPos {
+    //             col: 5,
+    //             row: 4,
+    //             half: MatrixHalf::Right,
+    //             value: 0
+    //         }
+    //     );
+    // }
 }

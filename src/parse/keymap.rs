@@ -1,3 +1,4 @@
+use crate::parse::Finger;
 use crate::parse::FingerAssignment;
 use camino::Utf8PathBuf;
 use eyre::{eyre, OptionExt, Result};
@@ -622,8 +623,11 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
             PhysicalPos {
                 col: 4,
                 row: 4,
-                half: MatrixHalf::Left,
-                value: 0
+                effort: 0,
+                finger: FingerAssignment {
+                    finger: Finger::Thumb,
+                    half: MatrixHalf::Left
+                }
             }
         );
         assert_eq!(
@@ -631,8 +635,11 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
             PhysicalPos {
                 col: 5,
                 row: 4,
-                half: MatrixHalf::Right,
-                value: 0
+                effort: 0,
+                finger: FingerAssignment {
+                    finger: Finger::Thumb,
+                    half: MatrixHalf::Right
+                }
             }
         );
         assert!(keymap.combos[1].contains_input_key("MT_SPC"));
