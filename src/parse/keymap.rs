@@ -1,9 +1,11 @@
+use crate::parse::FingerAssignment;
 use camino::Utf8PathBuf;
 use eyre::{eyre, OptionExt, Result};
 use regex::Regex;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::hash::Hash;
 use std::sync::LazyLock;
 
 use super::render_opts::{PhysicalPos, RenderOpts};
@@ -183,7 +185,28 @@ pub struct Key {
     pub matrix_pos: (usize, usize),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+impl Key {
+    pub fn is_sfb(&self, other: &Key) -> bool {
+        self.physical_pos.is_sfb(&other.physical_pos)
+    }
+}
+
+impl Eq for Key {}
+
+impl PartialEq for Key {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id) && self.matrix_pos == other.matrix_pos
+    }
+}
+
+impl Hash for Key {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.0.hash(state);
+        self.matrix_pos.hash(state);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct KeyId(pub String);
 
 impl std::fmt::Display for KeyId {
@@ -301,6 +324,54 @@ impl Combo {
 
     pub fn contains_input_key(&self, input: &str) -> bool {
         self.keys.iter().any(|key| key.id.0 == input)
+    }
+
+    pub fn contains_physical_pos(&self, pos: (usize, usize)) -> bool {
+        self.keys
+            .iter()
+            .any(|combo_key| combo_key.physical_pos.pos() == pos)
+    }
+
+    pub fn contains_finger(&self, finger: &FingerAssignment) -> bool {
+        self.keys
+            .iter()
+            .any(|combo_key| combo_key.physical_pos.finger == *finger)
+    }
+
+    pub fn is_key_sfb(&self, key: &Key) -> bool {
+        // Can't have the same position in the combo
+        if self.contains_physical_pos(key.physical_pos.pos()) {
+            return false;
+        }
+
+        self.contains_finger(&key.physical_pos.finger)
+    }
+
+    pub fn get_fingers(&self) -> HashSet<FingerAssignment> {
+        self.keys
+            .iter()
+            .map(|key| key.physical_pos.finger)
+            .collect()
+    }
+
+    pub fn get_positions(&self) -> HashSet<(usize, usize)> {
+        self.keys.iter().map(|key| key.physical_pos.pos()).collect()
+    }
+
+    pub fn is_combo_sfb(&self, combo: &Combo) -> bool {
+        if self
+            .get_positions()
+            .intersection(&combo.get_positions())
+            .next()
+            .is_some()
+        {
+            return false;
+        }
+
+        self.get_fingers()
+            .intersection(&combo.get_fingers())
+            .next()
+            .is_some()
     }
 }
 
@@ -522,6 +593,13 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
     "64436    63446",
     " 77",
     "   80    0"
+  ],
+  "finger_assignments": [
+    "11233    33211",
+    "01233    33210",
+    "01233    33210",
+    " 12",
+    "   44    4"
   ]
 }
         "#;
@@ -544,7 +622,8 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
             PhysicalPos {
                 col: 4,
                 row: 4,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 0
             }
         );
         assert_eq!(
@@ -552,7 +631,8 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
             PhysicalPos {
                 col: 5,
                 row: 4,
-                half: MatrixHalf::Right
+                half: MatrixHalf::Right,
+                value: 0
             }
         );
         assert!(keymap.combos[1].contains_input_key("MT_SPC"));

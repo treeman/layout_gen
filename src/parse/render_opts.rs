@@ -6,7 +6,6 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 #[derive(Debug, Clone)]
@@ -17,7 +16,6 @@ pub struct RenderOpts {
     pub legend: Vec<LegendSpec>,
     pub colors: HashMap<String, String>,
     pub physical_layout: PhysicalLayout,
-    pub finger_assignmens: PhysicalLayout,
     pub outputs: RenderOutputs,
 }
 
@@ -59,8 +57,7 @@ impl RenderOpts {
             layer_keys,
             legend: spec.legend,
             colors: spec.colors,
-            physical_layout: spec.physical_layout.convert(),
-            finger_assignmens: spec.finger_assignments.convert(),
+            physical_layout: PhysicalLayout::new(spec.physical_layout, spec.finger_assignments),
             outputs: spec.outputs,
         }
     }
@@ -79,21 +76,9 @@ impl RenderOpts {
         }
         res
     }
-
-    pub fn assigned_finger(&self, pos: (usize, usize)) -> Finger {
-        let spec = self.finger_assignmens.get(pos);
-        match spec.value {
-            0 => Finger::Pinky,
-            1 => Finger::Ring,
-            2 => Finger::Middle,
-            3 => Finger::Index,
-            4 => Finger::Thumb,
-            _ => panic!("Finger value {} unknown", spec.value),
-        }
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FingerAssignment {
     pub finger: Finger,
     pub half: MatrixHalf,
@@ -115,13 +100,33 @@ impl Ord for FingerAssignment {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Finger {
     Pinky,
     Ring,
     Middle,
     Index,
     Thumb,
+}
+
+impl Finger {
+    pub fn from_char(c: char) -> Self {
+        let value = c
+            .to_digit(10)
+            .expect("Physical layout should contain digits");
+        Self::from_u32(value)
+    }
+
+    pub fn from_u32(x: u32) -> Self {
+        match x {
+            0 => Finger::Pinky,
+            1 => Finger::Ring,
+            2 => Finger::Middle,
+            3 => Finger::Index,
+            4 => Finger::Thumb,
+            _ => panic!("Finger value {} unknown", x),
+        }
+    }
 }
 
 impl std::fmt::Display for Finger {
@@ -283,7 +288,7 @@ pub struct LegendSpec {
     pub title: String,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
 pub enum MatrixHalf {
     Left,
     Right,
@@ -312,42 +317,53 @@ fn default_true() -> bool {
 #[derive(Deserialize, Debug, Clone)]
 struct PhysicalLayoutSpec(Vec<String>);
 
-impl PhysicalLayoutSpec {
-    fn convert(self) -> PhysicalLayout {
+#[derive(Clone, Debug)]
+pub struct PhysicalLayout {
+    index_to_pos: Vec<PhysicalPos>,
+    pos_to_index: HashMap<(usize, usize), usize>,
+}
+
+impl PhysicalLayout {
+    pub fn new(effort_layout: PhysicalLayoutSpec, finger_layout: PhysicalLayoutSpec) -> Self {
+        assert_eq!(effort_layout.0.len(), finger_layout.0.len());
+
         let mut index_to_pos = Vec::new();
 
-        for (row, line) in self.0.into_iter().enumerate() {
-            let split: Vec<_> = line.trim_end().split("    ").collect();
-            assert!(split.len() <= 2);
+        for (row, (effort_line, finger_line)) in effort_layout
+            .0
+            .into_iter()
+            .zip(finger_layout.0.into_iter())
+            .enumerate()
+        {
+            for (split_i, (effort_line, finger_line)) in effort_line
+                .trim_end()
+                .split("    ")
+                .zip(finger_line.trim_end().split("    "))
+                .enumerate()
+            {
+                for (col, (effort, finger)) in
+                    effort_line.chars().zip(finger_line.chars()).enumerate()
+                {
+                    if effort == ' ' {
+                        continue;
+                    }
 
-            let mut curr_col = 0;
-            for char in split[0].chars() {
-                if char != ' ' {
+                    let half = match split_i {
+                        0 => MatrixHalf::Left,
+                        1 => MatrixHalf::Right,
+                        _ => panic!("More splits found in layout than 2"),
+                    };
+
+                    let finger = Finger::from_char(finger);
+
                     index_to_pos.push(PhysicalPos {
-                        col: curr_col,
+                        col,
                         row,
-                        half: MatrixHalf::Left,
-                        value: char
+                        finger: FingerAssignment { finger, half },
+                        effort: effort
                             .to_digit(10)
                             .expect("Physical layout should contain digits"),
                     });
-                }
-                curr_col += 1;
-            }
-
-            if split.len() > 1 {
-                for char in split[1].chars() {
-                    if char != ' ' {
-                        index_to_pos.push(PhysicalPos {
-                            col: curr_col,
-                            row,
-                            half: MatrixHalf::Right,
-                            value: char
-                                .to_digit(10)
-                                .expect("Physical layout should contain digits"),
-                        });
-                    }
-                    curr_col += 1;
                 }
             }
         }
@@ -363,15 +379,7 @@ impl PhysicalLayoutSpec {
             pos_to_index,
         }
     }
-}
 
-#[derive(Clone, Debug)]
-pub struct PhysicalLayout {
-    index_to_pos: Vec<PhysicalPos>,
-    pos_to_index: HashMap<(usize, usize), usize>,
-}
-
-impl PhysicalLayout {
     pub fn index_to_pos(&self, index: usize) -> PhysicalPos {
         assert!(index <= self.index_to_pos.len());
         self.index_to_pos[index]
@@ -390,13 +398,17 @@ impl PhysicalLayout {
 pub struct PhysicalPos {
     pub col: usize,
     pub row: usize,
-    pub half: MatrixHalf,
-    pub value: u32,
+    pub finger: FingerAssignment,
+    pub effort: u32,
 }
 
 impl PhysicalPos {
     pub fn pos(&self) -> (usize, usize) {
         (self.col, self.row)
+    }
+
+    pub fn is_sfb(&self, other: &PhysicalPos) -> bool {
+        self.pos() != other.pos() && self.finger == other.finger
     }
 }
 
@@ -409,23 +421,47 @@ mod tests {
     fn test_parse_render_opts() -> Result<()> {
         let input = r#"
 {
-  "default": [
-    {
-      "keys": ["_______", "xxxxxxx"],
-      "title": "",
-      "class": "blank"
-    },
-    {
-      "keys": ["SE_LPRN"],
-      "title": "("
-    }
+  "colors": {},
+  "legend": [],
+  "outputs": {
+    "combo_keys_with_separate_imgs": [],
+    "combo_highlight_groups": {},
+    "combo_background_layer_class": "combo_background",
+    "active_class_in_separate_layer": "active_layer"
+  },
+  "physical_layout": [
+    "54446    64445",
+    "21005    50012",
+    "64436    63446",
+    " 77",
+    "   80    0"
   ],
-  "_NUM": [
-    {
-      "keys": ["SE_J", "SE_P", "SE_K", "AT_U", "SE_LPRN", "SE_RPRN", "NUM_G"],
-      "class": "management"
-    }
-  ]
+  "finger_assignments": [
+    "11233    33211",
+    "01233    33210",
+    "01233    33210",
+    " 12",
+    "   44    4"
+  ],
+  "layers": {
+    "default": [
+        {
+        "keys": ["_______", "xxxxxxx"],
+        "title": "",
+        "class": "blank"
+        },
+        {
+        "keys": ["SE_LPRN"],
+        "title": "("
+        }
+    ],
+    "_NUM": [
+        {
+        "keys": ["SE_J", "SE_P", "SE_K", "AT_U", "SE_LPRN", "SE_RPRN", "NUM_G"],
+        "class": "management"
+        }
+    ]
+  }
 }
         "#;
         let opts = RenderOpts::parse_from_str("id", input)?;
@@ -470,7 +506,8 @@ mod tests {
             PhysicalPos {
                 col: 0,
                 row: 0,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 5
             }
         );
         assert_eq!(
@@ -478,7 +515,8 @@ mod tests {
             PhysicalPos {
                 col: 1,
                 row: 0,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 4
             }
         );
         assert_eq!(
@@ -486,7 +524,8 @@ mod tests {
             PhysicalPos {
                 col: 5,
                 row: 0,
-                half: MatrixHalf::Right
+                half: MatrixHalf::Right,
+                value: 6
             }
         );
         assert_eq!(
@@ -494,7 +533,8 @@ mod tests {
             PhysicalPos {
                 col: 9,
                 row: 0,
-                half: MatrixHalf::Right
+                half: MatrixHalf::Right,
+                value: 5
             }
         );
 
@@ -503,7 +543,8 @@ mod tests {
             PhysicalPos {
                 col: 0,
                 row: 1,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 2
             }
         );
         assert_eq!(
@@ -511,7 +552,8 @@ mod tests {
             PhysicalPos {
                 col: 1,
                 row: 1,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 1
             }
         );
 
@@ -520,7 +562,8 @@ mod tests {
             PhysicalPos {
                 col: 0,
                 row: 2,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 6
             }
         );
 
@@ -529,7 +572,8 @@ mod tests {
             PhysicalPos {
                 col: 1,
                 row: 3,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 7
             }
         );
         assert_eq!(
@@ -537,7 +581,8 @@ mod tests {
             PhysicalPos {
                 col: 2,
                 row: 3,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 7
             }
         );
 
@@ -546,7 +591,8 @@ mod tests {
             PhysicalPos {
                 col: 3,
                 row: 4,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 8
             }
         );
         assert_eq!(
@@ -554,7 +600,8 @@ mod tests {
             PhysicalPos {
                 col: 4,
                 row: 4,
-                half: MatrixHalf::Left
+                half: MatrixHalf::Left,
+                value: 0
             }
         );
 
@@ -563,7 +610,8 @@ mod tests {
             PhysicalPos {
                 col: 5,
                 row: 4,
-                half: MatrixHalf::Right
+                half: MatrixHalf::Right,
+                value: 0
             }
         );
     }

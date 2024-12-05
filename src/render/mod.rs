@@ -652,7 +652,7 @@ impl<'a> ComboGroupRender<'a> {
             let w = if combo.keys.len() == 5 { 160.0 } else { 80.0 };
             let x = if combo.keys.len() == 5 {
                 let dist = h;
-                if combo.keys[0].physical_pos.half == MatrixHalf::Left {
+                if combo.keys[0].physical_pos.finger.half == MatrixHalf::Left {
                     (combo.keys[0].x + 1.0) * key_w + dist
                 } else {
                     combo.keys[4].x * key_w - w
@@ -805,7 +805,7 @@ fn render_effort_grid(
         let effort = render_opts
             .physical_layout
             .get((key.physical_pos.col, key.physical_pos.row))
-            .value;
+            .effort;
         // println!("{}: {}", key.id.0, effort);
         let id = effort.to_string();
         override_class_map.insert(id.clone(), format!("effort_{id}"));
