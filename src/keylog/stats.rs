@@ -1,5 +1,6 @@
 use super::csv_parser::{self, RawKeylogEntry};
 use crate::parse::Combo;
+use crate::parse::Finger;
 use crate::parse::FingerAssignment;
 use crate::parse::InputInfo;
 use crate::parse::Key;
@@ -16,10 +17,13 @@ use std::collections::HashSet;
 pub struct KeylogStats {
     pub output_frequency: HashMap<String, u32>,
     pub finger_frequency: BTreeMap<FingerAssignment, u32>,
-    pub total_presses: u32,
-    pub total_left: u32,
-    pub total_right: u32,
-    pub total_sfbs: u32,
+    // One combo produces a single event (relevant for sfb calculations)
+    pub total_events: u32,
+    // Note that one combo can produce multiple key presses
+    pub total_key_presses: u32,
+    pub total_key_presses_left: u32,
+    pub total_key_presses_right: u32,
+    pub total_sfb_events: u32,
     pub sfbs: Vec<SfbStats>,
     pub sfbs_by_finger: BTreeMap<FingerAssignment, HashMap<String, SfbStats>>,
     pub sfbs_by_id: HashMap<String, SfbStats>,
@@ -101,6 +105,7 @@ impl KeylogStats {
 
         let mut sfbs_by_id: HashMap<String, SfbStats> = HashMap::new();
         for sfb in &sfb_series {
+            println!("{}", sfb.id());
             sfbs_by_id
                 .entry(sfb.id())
                 .and_modify(|x| x.presses += 1)
@@ -120,9 +125,9 @@ impl KeylogStats {
                     .entry(finger)
                     .and_modify(|x| {
                         x.entry(sfb.sfb.id())
-                            .and_modify(|x| x.presses += 1)
+                            .and_modify(|x| x.presses += sfb.presses)
                             .or_insert_with(|| SfbStats {
-                                presses: 1,
+                                presses: sfb.presses,
                                 sfb: sfb.sfb.clone(),
                             });
                     })
@@ -130,7 +135,7 @@ impl KeylogStats {
                         [(
                             sfb.sfb.id(),
                             SfbStats {
-                                presses: 1,
+                                presses: sfb.presses,
                                 sfb: sfb.sfb.clone(),
                             },
                         )]
@@ -145,13 +150,48 @@ impl KeylogStats {
             sfbs,
             sfbs_by_id,
             sfbs_by_finger,
-            total_sfbs: sfb_series.len() as u32,
+            total_events: entries.len() as u32,
+            total_sfb_events: sfb_series.len() as u32,
             output_frequency: frequency,
             finger_frequency,
-            total_presses,
-            total_left,
-            total_right,
+            total_key_presses: total_presses,
+            total_key_presses_left: total_left,
+            total_key_presses_right: total_right,
         })
+    }
+
+    pub fn top_sfbs(&self, count: usize, include_combos: bool) -> impl Iterator<Item = &SfbStats> {
+        self.sfbs
+            .iter()
+            .rev()
+            .filter(move |x| {
+                if !include_combos {
+                    !x.sfb.has_combo()
+                } else {
+                    true
+                }
+            })
+            .take(count)
+    }
+
+    pub fn sfb_frequency_by_finger(&self, include_combos: bool) -> BTreeMap<FingerAssignment, u32> {
+        self.sfbs_by_finger
+            .iter()
+            .map(|(finger, sfbs_by_id)| {
+                let presses: u32 = sfbs_by_id
+                    .values()
+                    .filter(move |x| {
+                        if !include_combos {
+                            !x.sfb.has_combo()
+                        } else {
+                            true
+                        }
+                    })
+                    .map(|x| x.presses)
+                    .sum();
+                (*finger, presses)
+            })
+            .collect()
     }
 }
 
@@ -281,7 +321,7 @@ impl KeylogEntry<'_> {
 
     pub fn is_combo_sfb(&self, combo: &Combo) -> bool {
         match self {
-            KeylogEntry::Combo(combo) => combo.is_combo_sfb(combo),
+            KeylogEntry::Combo(my_combo) => my_combo.is_combo_sfb(combo),
             KeylogEntry::Single { key, .. } => combo.is_key_sfb(key),
         }
     }
@@ -357,8 +397,7 @@ fn convert_keylog_entries<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::Keymap;
-    use crate::parse::RenderOpts;
+    use crate::parse::*;
 
     #[test]
     fn test_sfb_stats() -> Result<()> {
@@ -442,7 +481,7 @@ COMB(escape_sym,        ESC_SYM,        SE_T, SE_H)
 SUBS(lt_eq,             "<=",           SE_F, SE_H)
 
 SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
-COMB(combo_coln,        SE_COLN,      SE_R, SE_M)
+COMB(coln_sym,          COLN_SYM,       SE_N, SE_A)
         "##;
 
         let render_input = r#"
@@ -505,15 +544,19 @@ COMB(combo_coln,        SE_COLN,      SE_R, SE_M)
         let keylog = [
             // MT_SPC
             "0x0001,3,4,0,1,0x00,0x00,1",
-            // Both thumb keys, one SFB
+            // Both thumb keys, no sfb because it's the same
             "COMBO,NA,NA,0,0,0,0,0",
             // SE_J
             "0x0001,1,0,0,1,0x00,0x00,1",
-            // SE_C
+            // SE_C, sfb using ring
             "0x0001,0,1,0,1,0x00,0x00,1",
             // SE_S, sfb with C
             "0x0001,1,1,0,1,0x00,0x00,1",
             "0x0001,1,1,0,1,0x00,0x00,1",
+            "0x0001,1,1,0,1,0x00,0x00,1",
+            // SE_C, sfb with S
+            "0x0001,0,1,0,1,0x00,0x00,1",
+            // SE_S, sfb with C
             "0x0001,1,1,0,1,0x00,0x00,1",
             // SE_T
             "0x0001,1,2,0,1,0x00,0x00,1",
@@ -525,7 +568,11 @@ COMB(combo_coln,        SE_COLN,      SE_R, SE_M)
             "0x0001,6,1,0,1,0x00,0x00,1",
             // SE_W sfb
             "0x0001,4,1,0,1,0x00,0x00,1",
-            // sfb
+            // sfb :
+            "COMBO,NA,NA,0,0,0,0,6",
+            // sfb boot
+            "COMBO,NA,NA,0,0,0,0,2",
+            // sfb :
             "COMBO,NA,NA,0,0,0,0,6",
         ]
         .join("\n");
@@ -533,7 +580,182 @@ COMB(combo_coln,        SE_COLN,      SE_R, SE_M)
 
         let stats = KeylogStats::from_entries(&info, entries)?;
 
-        dbg!(stats.sfbs);
-        todo!();
+        assert_eq!(stats.total_sfb_events, 8);
+        assert_eq!(stats.total_events, 17);
+        assert_eq!(stats.total_key_presses, 26);
+
+        assert_eq!(
+            stats.finger_frequency.get(&FingerAssignment {
+                finger: Finger::Pinky,
+                half: MatrixHalf::Left,
+            }),
+            None
+        );
+        assert_eq!(
+            stats.finger_frequency.get(&FingerAssignment {
+                finger: Finger::Ring,
+                half: MatrixHalf::Left,
+            }),
+            Some(&7)
+        );
+        assert_eq!(
+            stats.finger_frequency.get(&FingerAssignment {
+                finger: Finger::Index,
+                half: MatrixHalf::Right,
+            }),
+            Some(&5)
+        );
+
+        let sfb_frequency_by_finger = stats.sfb_frequency_by_finger(true);
+
+        assert_eq!(
+            sfb_frequency_by_finger.get(&FingerAssignment {
+                finger: Finger::Pinky,
+                half: MatrixHalf::Left,
+            }),
+            None
+        );
+        assert_eq!(
+            sfb_frequency_by_finger.get(&FingerAssignment {
+                finger: Finger::Ring,
+                half: MatrixHalf::Left,
+            }),
+            Some(&4)
+        );
+        assert_eq!(
+            sfb_frequency_by_finger.get(&FingerAssignment {
+                finger: Finger::Index,
+                half: MatrixHalf::Right,
+            }),
+            Some(&4)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_sfb() {
+        let combo_a = Combo {
+            id: "comb_boot_r".into(),
+            output: "QK_BOOT".into(),
+            keys: vec![
+                Key {
+                    id: KeyId("SE_E".into()),
+                    x: 6.5,
+                    y: 4.0,
+                    physical_pos: PhysicalPos {
+                        col: 4,
+                        row: 4,
+                        finger: FingerAssignment {
+                            finger: Finger::Thumb,
+                            half: MatrixHalf::Right,
+                        },
+                        effort: 0,
+                    },
+                    matrix_pos: (7, 0),
+                },
+                Key {
+                    id: KeyId("SE_L".into()),
+                    x: 8.0,
+                    y: 2.28,
+                    physical_pos: PhysicalPos {
+                        col: 6,
+                        row: 2,
+                        finger: FingerAssignment {
+                            finger: Finger::Index,
+                            half: MatrixHalf::Right,
+                        },
+                        effort: 3,
+                    },
+                    matrix_pos: (6, 1),
+                },
+                Key {
+                    id: KeyId("SE_LPRN".into()),
+                    x: 9.0,
+                    y: 2.0,
+                    physical_pos: PhysicalPos {
+                        col: 7,
+                        row: 2,
+                        finger: FingerAssignment {
+                            finger: Finger::Middle,
+                            half: MatrixHalf::Right,
+                        },
+                        effort: 4,
+                    },
+                    matrix_pos: (6, 2),
+                },
+                Key {
+                    id: KeyId("SE_RPRN".into()),
+                    x: 10.0,
+                    y: 2.31,
+                    physical_pos: PhysicalPos {
+                        col: 8,
+                        row: 2,
+                        finger: FingerAssignment {
+                            finger: Finger::Ring,
+                            half: MatrixHalf::Right,
+                        },
+                        effort: 4,
+                    },
+                    matrix_pos: (6, 3),
+                },
+                Key {
+                    id: KeyId("SE_UNDS".into()),
+                    x: 11.0,
+                    y: 2.93,
+                    physical_pos: PhysicalPos {
+                        col: 9,
+                        row: 2,
+                        finger: FingerAssignment {
+                            finger: Finger::Pinky,
+                            half: MatrixHalf::Right,
+                        },
+                        effort: 6,
+                    },
+                    matrix_pos: (6, 4),
+                },
+            ],
+        };
+        let a = KeylogEntry::Combo(&combo_a);
+
+        let combo_b = Combo {
+            id: "combo_coln".into(),
+            output: "SE_COLN".into(),
+            keys: vec![
+                Key {
+                    id: KeyId("SE_R".into()),
+                    x: 0.0,
+                    y: 1.93,
+                    physical_pos: PhysicalPos {
+                        col: 0,
+                        row: 1,
+                        finger: FingerAssignment {
+                            finger: Finger::Pinky,
+                            half: MatrixHalf::Left,
+                        },
+                        effort: 2,
+                    },
+                    matrix_pos: (2, 0),
+                },
+                Key {
+                    id: KeyId("SE_M".into()),
+                    x: 7.0,
+                    y: 1.42,
+                    physical_pos: PhysicalPos {
+                        col: 0,
+                        row: 1,
+                        finger: FingerAssignment {
+                            finger: Finger::Index,
+                            half: MatrixHalf::Right,
+                        },
+                        effort: 5,
+                    },
+                    matrix_pos: (5, 0),
+                },
+            ],
+        };
+        let b = KeylogEntry::Combo(&combo_b);
+
+        assert!(a.is_entry_sfb(&b));
     }
 }

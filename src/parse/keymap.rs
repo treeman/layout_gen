@@ -166,8 +166,16 @@ impl Layer {
         })
     }
 
+    pub fn find_key_by_id(&self, id: &str) -> Option<&Key> {
+        self.keys.iter().find(|key| key.id.0 == id)
+    }
+
     pub fn find_key_by_matrix(&self, pos: (usize, usize)) -> Option<&Key> {
         self.keys.iter().find(|key| key.matrix_pos == pos)
+    }
+
+    pub fn find_key_by_physical_pos(&self, pos: (usize, usize)) -> Option<&Key> {
+        self.keys.iter().find(|key| key.physical_pos.pos() == pos)
     }
 
     pub fn replace_key_id(&mut self, key_id: &str, replacement: &str) {
@@ -613,6 +621,26 @@ SUBS(el_str_int,        "#{}"SS_TAP(X_LEFT),  SE_X, SE_W)
         assert_eq!(keymap.layers[0].keys.len(), 35);
         assert_eq!(keymap.layers[1].id.0, "_NUM");
         assert_eq!(keymap.layers[1].keys[1].id.0, "SE_PLUS");
+
+        let base = &keymap.layers[0];
+        assert_eq!(base.find_key_by_matrix((1, 0)).unwrap().id.0, "SE_J");
+        assert_eq!(base.find_key_by_matrix((0, 1)).unwrap().id.0, "SE_C");
+        assert_eq!(base.find_key_by_matrix((6, 4)).unwrap().id.0, "SE_UNDS");
+        assert_eq!(base.find_key_by_matrix((3, 4)).unwrap().id.0, "MT_SPC");
+        assert_eq!(base.find_key_by_physical_pos((0, 0)).unwrap().id.0, "SE_J");
+        assert_eq!(base.find_key_by_physical_pos((1, 0)).unwrap().id.0, "SE_C");
+        assert_eq!(base.find_key_by_physical_pos((2, 0)).unwrap().id.0, "SE_Y");
+        assert_eq!(base.find_key_by_physical_pos((3, 0)).unwrap().id.0, "SE_F");
+        assert_eq!(base.find_key_by_physical_pos((4, 0)).unwrap().id.0, "SE_P");
+        assert_eq!(base.find_key_by_physical_pos((5, 0)).unwrap().id.0, "SE_X");
+        assert_eq!(base.find_key_by_physical_pos((6, 0)).unwrap().id.0, "SE_W");
+        assert_eq!(base.find_key_by_physical_pos((7, 0)).unwrap().id.0, "SE_O");
+        assert_eq!(base.find_key_by_physical_pos((8, 0)).unwrap().id.0, "SE_U");
+        assert_eq!(
+            base.find_key_by_physical_pos((9, 0)).unwrap().id.0,
+            "SE_DOT"
+        );
+        assert_eq!(base.find_key_by_physical_pos((0, 1)).unwrap().id.0, "SE_R");
 
         assert_eq!(keymap.combos.len(), 6);
         assert_eq!(keymap.combos[0].output, "NUMWORD");

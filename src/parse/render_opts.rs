@@ -335,16 +335,16 @@ impl PhysicalLayout {
             .zip(finger_layout.0.into_iter())
             .enumerate()
         {
+            let mut col = 0;
             for (split_i, (effort_line, finger_line)) in effort_line
                 .trim_end()
                 .split("    ")
                 .zip(finger_line.trim_end().split("    "))
                 .enumerate()
             {
-                for (col, (effort, finger)) in
-                    effort_line.chars().zip(finger_line.chars()).enumerate()
-                {
+                for (effort, finger) in effort_line.chars().zip(finger_line.chars()) {
                     if effort == ' ' {
+                        col += 1;
                         continue;
                     }
 
@@ -364,6 +364,7 @@ impl PhysicalLayout {
                             .to_digit(10)
                             .expect("Physical layout should contain digits"),
                     });
+                    col += 1;
                 }
             }
         }
