@@ -43,19 +43,12 @@ pub fn output_stats(info: &InputInfo, keylog_file: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-fn output_sfbs(stats: &KeylogStats, title: &str, combos: bool) {
+fn output_sfbs(stats: &KeylogStats, title: &str, include_combos: bool) {
     let mut finger_row = String::new();
     let mut stats_row = String::new();
-    let mut total_presses = 0;
-    for (finger, sfbs_by_id) in &stats.sfbs_by_finger {
+    for (finger, presses) in &stats.sfb_frequency_by_finger(include_combos) {
         finger_row.push_str(&format!("{:>8}", finger.finger.to_string()));
-        let presses: u32 = sfbs_by_id
-            .values()
-            .filter(|x| if !combos { !x.sfb.has_combo() } else { true })
-            .map(|x| x.presses)
-            .sum();
-        total_presses += presses;
-        let perc = presses as f32 / stats.total_key_presses as f32 * 100.0;
+        let perc = *presses as f32 / stats.total_events as f32 * 100.0;
         stats_row.push_str(&format!("{perc:>7.2}%"));
     }
     println!();
@@ -64,12 +57,19 @@ fn output_sfbs(stats: &KeylogStats, title: &str, combos: bool) {
     println!("{}", finger_row);
     println!("{}", stats_row);
     println!();
-    let perc = total_presses as f32 / stats.total_key_presses as f32 * 100.0;
+    let perc = stats.sfb_perc(include_combos);
     println!("  total: {perc:>7.3}%",);
 
     println!("  top sfbs:");
-    for sfb in stats.top_sfbs(10, combos) {
-        let perc = sfb.presses as f32 / stats.total_key_presses as f32 * 100.0;
+    for sfb in stats.top_sfbs(10, include_combos) {
+        let perc = sfb.presses as f32 / stats.total_events as f32 * 100.0;
         println!("   {:<35}     {perc:>.2}%", sfb.sfb.id());
+    }
+
+    println!();
+    println!("  top sfbs by key:");
+    for (id, freq) in stats.top_sfbs_by_key(10, include_combos) {
+        let perc = freq as f32 / stats.total_events as f32 * 100.0;
+        println!("   {:<35}     {perc:>.2}%", id);
     }
 }

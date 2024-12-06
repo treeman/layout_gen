@@ -4,6 +4,7 @@ use crate::parse::Finger;
 use crate::parse::FingerAssignment;
 use crate::parse::InputInfo;
 use crate::parse::Key;
+use crate::parse::KeyId;
 use crate::parse::LayerId;
 use crate::parse::MatrixHalf;
 use camino::Utf8Path;
@@ -23,7 +24,7 @@ pub struct KeylogStats {
     pub total_key_presses: u32,
     pub total_key_presses_left: u32,
     pub total_key_presses_right: u32,
-    pub total_sfb_events: u32,
+    pub sfb_series: Vec<Sfb>,
     pub sfbs: Vec<SfbStats>,
     pub sfbs_by_finger: BTreeMap<FingerAssignment, HashMap<String, SfbStats>>,
     pub sfbs_by_id: HashMap<String, SfbStats>,
@@ -101,11 +102,13 @@ impl KeylogStats {
             .iter()
             .zip(entries.iter().skip(1))
             .filter_map(|(current, next)| Sfb::new_if_sfb(current, next))
+            // .filter(|x| !x.has_key("SE_J"))
+            // .filter(|x| !x.has_key("SE_K"))
             .collect();
 
         let mut sfbs_by_id: HashMap<String, SfbStats> = HashMap::new();
+        // let mut sfb_frequency_by_key: HashMap<KeyId, u32> = HashMap::new();
         for sfb in &sfb_series {
-            println!("{}", sfb.id());
             sfbs_by_id
                 .entry(sfb.id())
                 .and_modify(|x| x.presses += 1)
@@ -113,6 +116,12 @@ impl KeylogStats {
                     presses: 1,
                     sfb: sfb.clone(),
                 });
+            // for key in sfb.all_keys() {
+            //     sfb_frequency_by_key
+            //         .entry(key.id.clone())
+            //         .and_modify(|x| *x += 1)
+            //         .or_insert(1);
+            // }
         }
 
         let mut sfbs: Vec<SfbStats> = Vec::new();
@@ -151,7 +160,7 @@ impl KeylogStats {
             sfbs_by_id,
             sfbs_by_finger,
             total_events: entries.len() as u32,
-            total_sfb_events: sfb_series.len() as u32,
+            sfb_series,
             output_frequency: frequency,
             finger_frequency,
             total_key_presses: total_presses,
@@ -192,6 +201,56 @@ impl KeylogStats {
                 (*finger, presses)
             })
             .collect()
+    }
+
+    pub fn sfb_event_count(&self, include_combos: bool) -> u32 {
+        self.sfb_series
+            .iter()
+            .filter(move |x| {
+                if !include_combos {
+                    !x.has_combo()
+                } else {
+                    true
+                }
+            })
+            .count() as u32
+    }
+
+    pub fn sfb_perc(&self, include_combos: bool) -> f32 {
+        let sfb_events = self
+            .sfb_series
+            .iter()
+            .filter(move |x| {
+                if !include_combos {
+                    !x.has_combo()
+                } else {
+                    true
+                }
+            })
+            .count();
+        sfb_events as f32 / self.total_events as f32 * 100.0
+    }
+
+    pub fn top_sfbs_by_key(&self, count: usize, include_combos: bool) -> Vec<(KeyId, u32)> {
+        let mut sfb_frequency_by_key: HashMap<KeyId, u32> = HashMap::new();
+        for sfb in &self.sfb_series {
+            if !include_combos && sfb.has_combo() {
+                continue;
+            }
+            for key in sfb.all_keys() {
+                sfb_frequency_by_key
+                    .entry(key.id.clone())
+                    .and_modify(|x| *x += 1)
+                    .or_insert(1);
+            }
+        }
+
+        let mut res: Vec<_> = sfb_frequency_by_key
+            .iter()
+            .map(|(key, freq)| (key.clone(), *freq))
+            .collect();
+        res.sort_by_key(|(_, freq)| *freq);
+        res.into_iter().rev().take(count).collect()
     }
 }
 
@@ -260,6 +319,25 @@ impl Sfb {
 
     pub fn has_combo(&self) -> bool {
         matches!(self, Self::Combo { .. })
+    }
+
+    pub fn has_key(&self, key_id: &str) -> bool {
+        self.all_keys().iter().any(|key| key.id.0 == key_id)
+    }
+
+    pub fn all_keys(&self) -> Vec<&Key> {
+        match self {
+            Sfb::Combo {
+                first_keys,
+                second_keys,
+                ..
+            } => first_keys.iter().chain(second_keys.iter()).collect(),
+            Sfb::Single {
+                first_key,
+                second_key,
+                ..
+            } => vec![first_key, second_key],
+        }
     }
 
     pub fn id(&self) -> String {
@@ -580,7 +658,9 @@ COMB(coln_sym,          COLN_SYM,       SE_N, SE_A)
 
         let stats = KeylogStats::from_entries(&info, entries)?;
 
-        assert_eq!(stats.total_sfb_events, 8);
+        assert_eq!(stats.sfb_series.len(), 8);
+        assert_eq!(stats.sfb_event_count(true), 8);
+        assert_eq!(stats.sfb_event_count(false), 5);
         assert_eq!(stats.total_events, 17);
         assert_eq!(stats.total_key_presses, 26);
 
