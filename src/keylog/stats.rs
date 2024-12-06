@@ -116,12 +116,6 @@ impl KeylogStats {
                     presses: 1,
                     sfb: sfb.clone(),
                 });
-            // for key in sfb.all_keys() {
-            //     sfb_frequency_by_key
-            //         .entry(key.id.clone())
-            //         .and_modify(|x| *x += 1)
-            //         .or_insert(1);
-            // }
         }
 
         let mut sfbs: Vec<SfbStats> = Vec::new();
